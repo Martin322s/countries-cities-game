@@ -1,0 +1,392 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens. Everything visual derives from these — components never hardcode
+ * hex values. Dark-first: the game is played in a dark "party" atmosphere.
+ */
+@theme {
+  --font-display: 'Unbounded', 'Manrope', system-ui, sans-serif;
+  --font-sans: 'Manrope', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  /* Surfaces */
+  --color-ink-950: #07071a;
+  --color-ink-900: #0d0d26;
+  --color-ink-800: #15153a;
+  --color-ink-700: #23235a;
+  --color-ink-600: #36367a;
+
+  /* Text */
+  --color-fg: #f5f3ff;
+  --color-fg-muted: #b9b6d9;
+  --color-fg-subtle: #8a87b3;
+
+  /* Brand */
+  --color-brand-300: #ffc580;
+  --color-brand-400: #ffa94d;
+  --color-brand-500: #ff8a3d;
+  --color-accent-400: #ff6fb5;
+  --color-accent-500: #f2449a;
+  --color-violet-400: #a78bfa;
+  --color-cyan-400: #4fd8eb;
+
+  /* Answer / status semantics (results table, presence) */
+  --color-status-unique: #34d399;
+  --color-status-duplicate: #f87171;
+  --color-status-empty: #6b6a8f;
+  --color-status-invalidated: #c084fc;
+  --color-status-warning: #fbbf24;
+
+  /* Focus ring is shared by every interactive element */
+  --color-focus: #ffd29a;
+
+  --radius-panel: 1.75rem;
+
+  --shadow-glow: 0 10px 40px -10px rgb(255 138 61 / 0.55);
+  --shadow-panel: 0 30px 80px -30px rgb(0 0 0 / 0.7);
+
+  /*
+   * Motion system. Four durations and three curves — components use these (or the
+   * mirrored constants in src/shared/motion/motion.ts), never ad-hoc values.
+   *   instant  ~120 ms  hover/press feedback, status swaps
+   *   fast     ~200 ms  small state changes, toasts, badges
+   *   normal   ~360 ms  screen and panel entrances
+   *   dramatic ~720 ms  game events: countdown numbers, the letter, the winner
+   * Reduced motion collapses all of them (see the media query below).
+   */
+  --ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+
+  --animate-float: float 14s ease-in-out infinite;
+  --animate-rise: rise var(--motion-normal) var(--ease-standard) both;
+  --animate-screen-in: screen-in var(--motion-normal) var(--ease-standard) both;
+  --animate-dialog-in: dialog-in var(--motion-fast) var(--ease-standard) both;
+  --animate-count-pop: count-pop 950ms var(--ease-emphasized) both;
+  --animate-letter-reveal: letter-reveal var(--motion-dramatic) var(--ease-emphasized) both;
+  --animate-letter-settle: letter-settle var(--motion-dramatic) var(--ease-emphasized) both;
+  --animate-soft-pulse: soft-pulse 1s ease-in-out infinite;
+  --animate-cell-reveal: cell-reveal 520ms var(--ease-standard) both;
+  --animate-cell-update: cell-update 1.1s var(--ease-standard) both;
+  --animate-cell-update-again: cell-update-again 1.1s var(--ease-standard) both;
+  --animate-column-flash: column-flash var(--motion-dramatic) var(--ease-standard) both;
+  --animate-fade-in: fade-in var(--motion-normal) var(--ease-standard) both;
+  --animate-status-in: status-in var(--motion-fast) var(--ease-emphasized) both;
+  --animate-pop-in: pop-in var(--motion-dramatic) var(--ease-emphasized) both;
+  --animate-dot: dot 1.2s ease-in-out infinite;
+  --animate-confetti: confetti var(--confetti-duration, 2.8s) var(--ease-exit) both;
+
+  @keyframes screen-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes letter-settle {
+    0% {
+      box-shadow: 0 0 0 0 rgb(255 169 77 / 0.7);
+      transform: scale(1.12);
+    }
+    60% {
+      box-shadow: 0 0 0 14px rgb(255 169 77 / 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgb(255 169 77 / 0);
+      transform: scale(1);
+    }
+  }
+
+  @keyframes cell-update {
+    0% {
+      box-shadow: 0 0 0 3px var(--cell-glow, rgb(255 255 255 / 0.5));
+    }
+    100% {
+      box-shadow: 0 0 0 0 transparent;
+    }
+  }
+
+  @keyframes cell-update-again {
+    0% {
+      box-shadow: 0 0 0 3px var(--cell-glow, rgb(255 255 255 / 0.5));
+    }
+    100% {
+      box-shadow: 0 0 0 0 transparent;
+    }
+  }
+
+  @keyframes column-flash {
+    0% {
+      color: var(--color-brand-300);
+      text-shadow: 0 0 18px rgb(255 169 77 / 0.6);
+    }
+    100% {
+      text-shadow: none;
+    }
+  }
+
+  @keyframes status-in {
+    from {
+      opacity: 0;
+      transform: scale(0.85);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes pop-in {
+    0% {
+      opacity: 0;
+      transform: translateY(10px) scale(0.94);
+    }
+    60% {
+      opacity: 1;
+      transform: translateY(0) scale(1.02);
+    }
+    100% {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes confetti {
+    0% {
+      transform: translate3d(0, 0, 0) rotate(0deg);
+      opacity: 0;
+    }
+    8% {
+      opacity: 0.95;
+    }
+    100% {
+      transform: translate3d(var(--drift, 0px), var(--fall, 460px), 0) rotate(var(--spin, 540deg));
+      opacity: 0;
+    }
+  }
+
+  @keyframes cell-reveal {
+    0% {
+      opacity: 0.35;
+      transform: rotateX(70deg) scale(0.96);
+    }
+    60% {
+      opacity: 1;
+      box-shadow: 0 0 0 3px var(--cell-glow, transparent);
+    }
+    100% {
+      opacity: 1;
+      transform: rotateX(0) scale(1);
+      box-shadow: 0 0 0 0 transparent;
+    }
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes dot {
+    0%,
+    80%,
+    100% {
+      opacity: 0.2;
+      transform: translateY(0);
+    }
+    40% {
+      opacity: 1;
+      transform: translateY(-4px);
+    }
+  }
+
+  /* One countdown number: confident entrance, a beat of emphasis, clean exit. */
+  @keyframes count-pop {
+    0% {
+      opacity: 0;
+      transform: scale(1.45);
+      filter: blur(6px);
+    }
+    22% {
+      opacity: 1;
+      transform: scale(1);
+      filter: blur(0);
+    }
+    78% {
+      opacity: 1;
+      transform: scale(0.97);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(0.82);
+    }
+  }
+
+  @keyframes letter-reveal {
+    0% {
+      opacity: 0;
+      transform: scale(0.6);
+      filter: blur(10px);
+    }
+    55% {
+      opacity: 1;
+      transform: scale(1.04);
+      filter: blur(0);
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  @keyframes soft-pulse {
+    0%,
+    100% {
+      transform: scale(1);
+    }
+    12% {
+      transform: scale(1.06);
+    }
+    40% {
+      transform: scale(1);
+    }
+  }
+
+  @keyframes float {
+    0%,
+    100% {
+      transform: translate3d(0, 0, 0) rotate(var(--tilt, 0deg));
+    }
+    50% {
+      transform: translate3d(0, -18px, 0) rotate(calc(var(--tilt, 0deg) * -1));
+    }
+  }
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes dialog-in {
+    from {
+      opacity: 0;
+      transform: translateY(12px) scale(0.97);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+}
+
+/* Durations are plain custom properties (Tailwind: `duration-(--motion-fast)`). */
+:root {
+  --motion-instant: 120ms;
+  --motion-fast: 200ms;
+  --motion-normal: 360ms;
+  --motion-dramatic: 720ms;
+}
+
+@layer base {
+  html {
+    color-scheme: dark;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    min-height: 100dvh;
+    background-color: var(--color-ink-950);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    /*
+     * lang="bg" enables Bulgarian localized glyphs (д→g, т→m, и→u shapes). They give
+     * display type character but hurt legibility in small UI text, so body text uses
+     * the standard Cyrillic forms and only `.font-display` keeps the Bulgarian ones.
+     */
+    font-feature-settings: 'locl' 0;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  :focus-visible {
+    outline: 3px solid var(--color-focus);
+    outline-offset: 3px;
+  }
+
+  .font-display {
+    font-feature-settings: 'locl' 1;
+  }
+
+  ::selection {
+    background: rgb(255 138 61 / 0.4);
+  }
+
+  dialog::backdrop {
+    background: rgb(7 7 26 / 0.72);
+    backdrop-filter: blur(6px);
+  }
+}
+
+@utility glass {
+  /* background-image only, so a bg-* color utility can provide an opaque base */
+  background-image: linear-gradient(160deg, rgb(255 255 255 / 0.09), rgb(255 255 255 / 0.03));
+  border: 1px solid rgb(255 255 255 / 0.1);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.08),
+    var(--shadow-panel);
+  backdrop-filter: blur(18px) saturate(140%);
+}
+
+@utility text-gradient-brand {
+  background: linear-gradient(
+    100deg,
+    var(--color-brand-300),
+    var(--color-brand-500) 45%,
+    var(--color-accent-400)
+  );
+  background-clip: text;
+  color: transparent;
+}
+
+/*
+ * Reduced motion: every animation/transition becomes (nearly) instant and runs once,
+ * so state changes still happen — nothing waits for an animation to finish. Purely
+ * decorative motion (confetti, drifting letters) is removed in the components.
+ */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-instant: 1ms;
+    --motion-fast: 1ms;
+    --motion-normal: 1ms;
+    --motion-dramatic: 1ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/*
+ * The round letter must be unmistakable: use the standard Cyrillic glyph even in the
+ * display font (whose Bulgarian localized forms are stylised, e.g. Ж).
+ */
+@utility letter-glyph {
+  font-feature-settings: 'locl' 0;
+}
