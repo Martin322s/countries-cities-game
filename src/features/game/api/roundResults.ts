@@ -17,7 +17,7 @@ import { getSupabaseClient } from '@/shared/lib/supabase';
 import { recordClockSample } from '../clock/serverClock';
 
 /** Server-computed cell state. The client never re-derives scores. */
-export type CellState = 'unique' | 'duplicate' | 'empty' | 'invalid';
+export type CellState = 'unique' | 'duplicate' | 'empty' | 'wrong_letter' | 'invalid';
 
 export interface ResultCell {
   category: CategoryId;
@@ -25,7 +25,7 @@ export interface ResultCell {
   answer: string;
   state: CellState;
   points: number;
-  /** Size of the duplicate group among valid answers (0 for empty/invalid). */
+  /** Size of the duplicate group among valid answers (0 for empty/wrong letter/invalid). */
   duplicateCount: number;
 }
 
@@ -67,7 +67,7 @@ export interface RoundResults {
   standings: Standing[];
 }
 
-const CELL_STATES: readonly CellState[] = ['unique', 'duplicate', 'empty', 'invalid'];
+const CELL_STATES: readonly CellState[] = ['unique', 'duplicate', 'empty', 'wrong_letter', 'invalid'];
 
 type JsonObject = Record<string, unknown>;
 const isObject = (value: unknown): value is JsonObject =>

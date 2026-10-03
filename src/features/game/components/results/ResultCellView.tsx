@@ -12,6 +12,7 @@ const STATE_CLASSES: Record<CellState, string> = {
   duplicate:
     'border-status-duplicate/50 bg-status-duplicate/12 [--cell-glow:rgb(248_113_113/0.45)]',
   empty: 'border-white/8 bg-white/[0.03]',
+  wrong_letter: 'border-dashed border-white/20 bg-white/[0.03]',
   invalid:
     'border-dashed border-status-invalidated/60 bg-status-invalidated/10 [--cell-glow:rgb(192_132_252/0.4)]',
 };
@@ -20,6 +21,7 @@ const BADGE_CLASSES: Record<CellState, string> = {
   unique: 'bg-status-unique/20 text-status-unique',
   duplicate: 'bg-status-duplicate/20 text-status-duplicate',
   empty: 'text-fg-subtle',
+  wrong_letter: 'bg-white/10 text-fg-muted',
   invalid: 'bg-status-invalidated/20 text-status-invalidated',
 };
 
@@ -30,6 +32,7 @@ function StateIcon({ state }: { state: CellState }) {
     case 'duplicate':
       return <DuplicateIcon width={13} height={13} />;
     case 'invalid':
+    case 'wrong_letter':
       return <BanIcon width={13} height={13} />;
     case 'empty':
       return null;
@@ -44,7 +47,7 @@ interface ResultCellViewProps {
   staggerIndex: number;
   /** Animate the transition into the revealed state (only during the live reveal). */
   animate: boolean;
-  /** Present only for the host on a revealed, non-empty answer. */
+  /** Present only for the host on a revealed answer that the host can rule on. */
   onSelect?: () => void;
 }
 
@@ -84,7 +87,11 @@ export function ResultCellView({
     : undefined;
   const pointsLabel = cell.points > 0 ? `+${cell.points}` : '0';
   const duplicateHint =
-    cell.state === 'duplicate' ? `Същият отговор имат ${cell.duplicateCount} играчи` : undefined;
+    cell.state === 'duplicate'
+      ? `Същият отговор имат ${cell.duplicateCount} играчи`
+      : cell.state === 'wrong_letter'
+        ? 'Не започва с буквата на рунда'
+        : undefined;
 
   const content = (
     <>
@@ -93,6 +100,7 @@ export function ResultCellView({
           'min-w-0 flex-1 text-left text-sm leading-snug font-semibold break-words',
           cell.state === 'empty' && 'text-fg-subtle',
           cell.state === 'invalid' && 'text-fg-muted line-through decoration-status-invalidated/80',
+          cell.state === 'wrong_letter' && 'text-fg-muted line-through decoration-white/50',
         )}
       >
         {cell.state === 'empty' ? '—' : cell.answer}

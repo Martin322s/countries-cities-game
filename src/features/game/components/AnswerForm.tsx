@@ -6,6 +6,7 @@ import {
   CATEGORY_LABELS,
   type AnswerValues,
   type CategoryId,
+  startsWithLetter,
 } from '@/domain';
 import { cn } from '@/shared/lib/cn';
 
@@ -16,6 +17,8 @@ interface AnswerFormProps {
   /** Focus target after the last field (the ready button). */
   nextFocusRef: RefObject<HTMLButtonElement | null>;
   autoFocusFirst: boolean;
+  /** The round's letter: answers starting with another letter score 0. */
+  letter: string | null;
 }
 
 function prefersPreciseInput(): boolean {
@@ -34,6 +37,7 @@ export function AnswerForm({
   readOnly,
   nextFocusRef,
   autoFocusFirst,
+  letter,
 }: AnswerFormProps) {
   const inputs = useRef<(HTMLInputElement | null)[]>([]);
   const composing = useRef(false);
@@ -68,6 +72,8 @@ export function AnswerForm({
         const id = `answer-${category}`;
         const isLast = index === CATEGORY_IDS.length - 1;
         const filled = values[category].trim() !== '';
+        const wrongLetter = filled && letter !== null && !startsWithLetter(values[category], letter);
+        const hintId = `${id}-hint`;
         return (
           <div
             key={category}
@@ -113,6 +119,8 @@ export function AnswerForm({
               }}
               readOnly={readOnly}
               aria-readonly={readOnly}
+              aria-invalid={wrongLetter || undefined}
+              aria-describedby={wrongLetter ? hintId : undefined}
               maxLength={ANSWER_MAX_LENGTH}
               autoComplete="off"
               autoCorrect="off"
@@ -127,8 +135,14 @@ export function AnswerForm({
                 'transition-[border-color,box-shadow] duration-(--motion-fast) ease-standard',
                 'focus-visible:border-brand-400 focus-visible:shadow-[0_0_0_4px_rgb(255_169_77/0.14)] focus-visible:outline-offset-0',
                 readOnly && 'cursor-not-allowed text-fg-muted',
+                wrongLetter && 'border-status-duplicate/60',
               )}
             />
+            {wrongLetter ? (
+              <p id={hintId} className="text-xs font-semibold text-status-duplicate sm:col-start-2">
+                {`Трябва да започва с „${letter}“ — иначе носи 0 точки.`}
+              </p>
+            ) : null}
           </div>
         );
       })}

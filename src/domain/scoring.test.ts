@@ -245,3 +245,48 @@ describe('scoreRound', () => {
     expect(aliceScore?.answers.village?.status).toBe('empty');
   });
 });
+
+describe('first-letter rule', () => {
+  it('scores an answer with the wrong first letter 0 and keeps it out of duplicate groups', () => {
+    const result = classifyCategoryAnswers(
+      new Map([
+        [alice, 'Кристина'],
+        [bob, 'Кристина'],
+        [nicky, 'Юлия'],
+      ]),
+      undefined,
+      'Ю',
+    );
+    expect(result.get(alice)).toMatchObject({ status: 'wrong_letter', points: 0 });
+    expect(result.get(bob)).toMatchObject({ status: 'wrong_letter', points: 0 });
+    expect(result.get(nicky)).toMatchObject({ status: 'unique', points: 1 });
+  });
+
+  it('does not let a wrong-letter answer turn a valid one into a duplicate', () => {
+    const result = classifyCategoryAnswers(
+      new Map([
+        [alice, 'Юлия'],
+        [bob, 'Юлия'],
+        [nicky, 'Ана'],
+      ]),
+      undefined,
+      'Ю',
+    );
+    expect(result.get(alice)?.status).toBe('duplicate');
+    expect(result.get(nicky)?.status).toBe('wrong_letter');
+  });
+
+  it('applies to a whole round', () => {
+    const scores = scoreRound(
+      new Map<PlayerId, AnswerSet>([
+        [alice, { country: 'Югославия', city: 'Кюстендил', name: 'Юлия' }],
+        [bob, { country: 'Япония' }],
+      ]),
+      undefined,
+      'Ю',
+    );
+    expect(scores.get(alice)?.answers.city?.status).toBe('wrong_letter');
+    expect(scores.get(alice)?.total).toBe(2);
+    expect(scores.get(bob)?.total).toBe(0);
+  });
+});

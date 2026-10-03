@@ -69,7 +69,7 @@ export function allReadyCue(roundId: RoundId, lockedAt: number): Cue {
 /**
  * One sound per category column, never per cell. Mixed columns would otherwise stack
  * sounds, so the column speaks for the current player's own answer: crisp for unique,
- * flat for a duplicate, muted for invalid, a neutral tick for empty (or a spectator).
+ * flat for a duplicate, muted for invalid or a wrong first letter, a neutral tick for empty (or a spectator).
  */
 export function categorySound(myState: CellState | null): SoundId {
   switch (myState) {
@@ -78,6 +78,7 @@ export function categorySound(myState: CellState | null): SoundId {
     case 'duplicate':
       return 'reveal-duplicate';
     case 'invalid':
+    case 'wrong_letter':
       return 'reveal-invalid';
     case 'empty':
     case null:

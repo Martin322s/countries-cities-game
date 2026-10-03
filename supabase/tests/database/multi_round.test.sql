@@ -46,11 +46,15 @@ $$;
 
 -- From ROUND_WAITING to REVEAL: everyone ready, countdown skipped, answers saved,
 -- everyone locks, everyone ready for results. Returns the round id.
-create function pg_temp.play_to_reveal(p_answers jsonb) returns uuid language plpgsql as $$
+-- Letters are random, so every non-empty answer is prefixed with the round's letter:
+-- equal answers stay equal and the scoring the fixtures describe is unchanged.
+create function pg_temp.play_to_reveal(p_answers jsonb) returns uuid language plpgsql as $
 declare
   v_round uuid := pg_temp.current_round();
   v_player uuid;
   v_entry record;
+  v_letter text;
+  v_answers jsonb;
 begin
   for v_player in select player_id from public.answer_sheets where round_id = v_round loop
     perform pg_temp.as_user(v_player::text);
@@ -62,9 +66,14 @@ begin
          started_at = started_at - interval '4 seconds',
          ends_at = ends_at - interval '4 seconds'
    where id = v_round;
+  select letter into strict v_letter from public.rounds where id = v_round;
   for v_entry in select key, value from jsonb_each(p_answers) loop
+    select coalesce(jsonb_object_agg(a.key, case when btrim(a.value #>> '{}') = '' then a.value
+                                                 else to_jsonb(v_letter || btrim(a.value #>> '{}')) end), '{}')
+      into v_answers
+      from jsonb_each(v_entry.value) a;
     perform pg_temp.as_user(v_entry.key);
-    perform public.save_answers(pg_temp.room(), v_round, v_entry.value);
+    perform public.save_answers(pg_temp.room(), v_round, v_answers);
     perform pg_temp.as_admin();
   end loop;
   for v_player in select player_id from public.answer_sheets where round_id = v_round loop

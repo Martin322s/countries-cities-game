@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { areAnswersEquivalent, isEmptyAnswer, normalizeAnswer } from './normalization';
+import {
+  areAnswersEquivalent,
+  isEmptyAnswer,
+  normalizeAnswer,
+  startsWithLetter,
+} from './normalization';
 
 describe('normalizeAnswer', () => {
   it('lowercases Bulgarian Cyrillic text', () => {
@@ -64,5 +69,23 @@ describe('areAnswersEquivalent', () => {
 
   it('never treats two empty answers as equivalent', () => {
     expect(areAnswersEquivalent('', '   ')).toBe(false);
+  });
+});
+
+describe('startsWithLetter', () => {
+  it('accepts answers starting with the letter, in any case and with outer spaces', () => {
+    expect(startsWithLetter('Юта', 'Ю')).toBe(true);
+    expect(startsWithLetter('  юта ', 'Ю')).toBe(true);
+    expect(startsWithLetter('ЮТА', 'Ю')).toBe(true);
+  });
+
+  it('rejects answers starting with another letter, and empty answers', () => {
+    expect(startsWithLetter('Кристина', 'Ю')).toBe(false);
+    expect(startsWithLetter('Иорк', 'Й')).toBe(false);
+    expect(startsWithLetter('   ', 'Ю')).toBe(false);
+  });
+
+  it('compares the composed form (й typed as и + breve still counts as Й)', () => {
+    expect(startsWithLetter(`и${String.fromCodePoint(0x306)}ордания`, 'Й')).toBe(true);
   });
 });

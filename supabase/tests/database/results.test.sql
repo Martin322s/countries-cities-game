@@ -5,7 +5,7 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(69);
+select plan(72);
 
 insert into auth.users (id, aud, role, is_anonymous)
 values
@@ -69,18 +69,22 @@ update public.rounds
        started_at = started_at - interval '4 seconds',
        ends_at = ends_at - interval '4 seconds'
  where id = current_setting('test.round')::uuid;
+-- The letter is random; the fixture answers are written for "М".
+update public.rounds set letter = 'М' where id = current_setting('test.round')::uuid;
+update public.rooms set used_letters = array['М']
+ where id = current_setting('test.room')::uuid and cardinality(used_letters) > 0;
 
 -- Answers designed to cover every scoring rule.
 select pg_temp.act_as('00000000-0000-0000-0000-00000000aa01');
 set local role authenticated;
 select public.save_answers(current_setting('test.room')::uuid, current_setting('test.round')::uuid,
-  '{"country":"Малта","city":"Монтана","animal":"Мечка","plant":"Стара Загора","name":"Мария"}'::jsonb);
+  '{"country":"Малта","city":"Монтана","animal":"Мечка","plant":"Мурсалски чай","name":"Мария"}'::jsonb);
 select pg_temp.act_as('00000000-0000-0000-0000-00000000bb02');
 select public.save_answers(current_setting('test.room')::uuid, current_setting('test.round')::uuid,
-  '{"country":"   ","city":" монтана ","animal":"Мечка","plant":"Стара-Загора","name":"мария"}'::jsonb);
+  '{"country":"   ","city":" монтана ","animal":"Мечка","plant":"Мурсалски-чай","name":"мария","object":"Кристина"}'::jsonb);
 select pg_temp.act_as('00000000-0000-0000-0000-00000000cc03');
 select public.save_answers(current_setting('test.room')::uuid, current_setting('test.round')::uuid,
-  '{"country":"Мексико","city":"МОНТАНА ","animal":"Мравка"}'::jsonb);
+  '{"country":"Мексико","city":"МОНТАНА ","animal":"Мравка","object":" кристина"}'::jsonb);
 
 -- 1–2. Nothing is visible before the reveal.
 select pg_temp.act_as('00000000-0000-0000-0000-00000000bb02');
@@ -156,9 +160,16 @@ select is((select duplicate_count from public.round_cells(current_setting('test.
   3, 'the duplicate group size is reported');
 select is(pg_temp.cell('00000000-0000-0000-0000-00000000aa01', 'animal'), 'duplicate:0', '2-way duplicate = 0');
 select is(pg_temp.cell('00000000-0000-0000-0000-00000000cc03', 'animal'), 'unique:1', 'a different answer in the same category stays unique');
-select is(pg_temp.cell('00000000-0000-0000-0000-00000000aa01', 'plant'), 'unique:1', '"Стара Загора" …');
-select is(pg_temp.cell('00000000-0000-0000-0000-00000000bb02', 'plant'), 'unique:1', '… and "Стара-Загора" are not merged');
+select is(pg_temp.cell('00000000-0000-0000-0000-00000000aa01', 'plant'), 'unique:1', '"Мурсалски чай" …');
+select is(pg_temp.cell('00000000-0000-0000-0000-00000000bb02', 'plant'), 'unique:1', '… and "Мурсалски-чай" are not merged');
 select is(pg_temp.cell('00000000-0000-0000-0000-00000000aa01', 'name'), 'duplicate:0', 'duplicates are case-insensitive');
+select is(pg_temp.cell('00000000-0000-0000-0000-00000000bb02', 'object'), 'wrong_letter:0',
+  'an answer that does not start with the round letter scores 0 automatically');
+select is(pg_temp.cell('00000000-0000-0000-0000-00000000cc03', 'object'), 'wrong_letter:0',
+  'two equal wrong-letter answers are wrong_letter, not duplicates');
+select is((select duplicate_count from public.round_cells(current_setting('test.round')::uuid)
+            where player_id = '00000000-0000-0000-0000-00000000cc03' and category = 'object'),
+  0, 'wrong-letter answers are left out of duplicate groups');
 select is((select raw_value from public.answers where category = 'city' and player_id = '00000000-0000-0000-0000-00000000bb02'),
   'монтана', 'the original text is kept for display');
 

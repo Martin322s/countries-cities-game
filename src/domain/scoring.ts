@@ -1,32 +1,35 @@
 import { CATEGORY_IDS, type CategoryId } from './categories';
 import type { PlayerId } from './ids';
 import type { AnswerSet } from './models';
-import { normalizeAnswer, type NormalizedAnswer } from './normalization';
+import { normalizeAnswer, startsWithLetter, type NormalizedAnswer } from './normalization';
 
 /**
  * Outcome of a single answer cell in the results table.
  * - unique:      valid, and no other VALID answer in the category matches it → 1 point
  * - duplicate:   valid, but ≥1 other valid answer matches it → 0 for every holder
  * - empty:       blank after normalization → 0
+ * - wrong_letter: does not start with the round's letter → 0
  * - invalidated: manually rejected by the host → 0
  *
  * Scoring pipeline (per category, per round). The order is a product rule:
  *   1. normalize answers
  *   2. remove empty answers
- *   3. remove manually invalidated answers
- *   4. build duplicate groups among the REMAINING valid answers
- *   5. unique → 1 point
- *   6. duplicate → 0 points
+ *   3. remove answers that do not start with the round's letter
+ *   4. remove manually invalidated answers
+ *   5. build duplicate groups among the REMAINING valid answers
+ *   6. unique → 1 point
+ *   7. duplicate → 0 points
  *
  * Consequence: if A and B both write "Монтана" and the host invalidates A's answer,
  * A becomes `invalidated` (0) and B becomes `unique` (1).
  */
-export type AnswerStatus = 'unique' | 'duplicate' | 'empty' | 'invalidated';
+export type AnswerStatus = 'unique' | 'duplicate' | 'empty' | 'wrong_letter' | 'invalidated';
 
 export const POINTS_BY_STATUS: Readonly<Record<AnswerStatus, number>> = {
   unique: 1,
   duplicate: 0,
   empty: 0,
+  wrong_letter: 0,
   invalidated: 0,
 };
 
@@ -64,33 +67,39 @@ export function countNormalizedAnswers(
 /**
  * Classifies every player's answer in ONE category of ONE round, following the
  * pipeline documented on `AnswerStatus`. The result does not depend on input order.
+ * Without `letter` the first-letter rule is not applied.
  */
 export function classifyCategoryAnswers(
   answersByPlayer: ReadonlyMap<PlayerId, string>,
   invalidatedPlayerIds: ReadonlySet<PlayerId> = NO_INVALIDATIONS,
+  letter?: string,
 ): Map<PlayerId, ScoredAnswer> {
-  // Steps 1–3: normalize, then set aside empty and invalidated answers.
+  const excludedStatus = (raw: string, normalized: NormalizedAnswer, playerId: PlayerId) => {
+    if (normalized.length === 0) return 'empty';
+    if (letter !== undefined && !startsWithLetter(raw, letter)) return 'wrong_letter';
+    if (invalidatedPlayerIds.has(playerId)) return 'invalidated';
+    return null;
+  };
+
+  // Steps 1–4: normalize, then set aside empty, wrong-letter and invalidated answers.
   const normalizedByPlayer = new Map<PlayerId, NormalizedAnswer>();
   const validAnswers: NormalizedAnswer[] = [];
   for (const [playerId, raw] of answersByPlayer) {
     const normalized = normalizeAnswer(raw);
     normalizedByPlayer.set(playerId, normalized);
-    if (normalized.length > 0 && !invalidatedPlayerIds.has(playerId)) {
-      validAnswers.push(normalized);
-    }
+    if (excludedStatus(raw, normalized, playerId) === null) validAnswers.push(normalized);
   }
 
-  // Step 4: duplicate groups among the remaining valid answers only.
+  // Step 5: duplicate groups among the remaining valid answers only.
   const validCounts = countNormalizedAnswers(validAnswers);
 
-  // Steps 5–6.
+  // Steps 6–7.
   const result = new Map<PlayerId, ScoredAnswer>();
   for (const [playerId, raw] of answersByPlayer) {
     const normalized = normalizedByPlayer.get(playerId) ?? normalizeAnswer(raw);
-    let status: AnswerStatus;
-    if (normalized.length === 0) status = 'empty';
-    else if (invalidatedPlayerIds.has(playerId)) status = 'invalidated';
-    else status = (validCounts.get(normalized) ?? 0) > 1 ? 'duplicate' : 'unique';
+    const status: AnswerStatus =
+      excludedStatus(raw, normalized, playerId) ??
+      ((validCounts.get(normalized) ?? 0) > 1 ? 'duplicate' : 'unique');
     result.set(playerId, { raw, normalized, status, points: POINTS_BY_STATUS[status] });
   }
 
@@ -101,6 +110,7 @@ export function classifyCategoryAnswers(
 export function scoreRound(
   answerSets: ReadonlyMap<PlayerId, AnswerSet>,
   invalidated: InvalidatedAnswers = new Map(),
+  letter?: string,
 ): Map<PlayerId, PlayerRoundScore> {
   const scores = new Map<PlayerId, PlayerRoundScore>();
   for (const playerId of answerSets.keys()) {
@@ -116,6 +126,7 @@ export function scoreRound(
     const classified = classifyCategoryAnswers(
       categoryAnswers,
       invalidated.get(category) ?? NO_INVALIDATIONS,
+      letter,
     );
     for (const [playerId, scored] of classified) {
       const playerScore = scores.get(playerId);

@@ -5,5 +5,6 @@ export const CELL_STATE_LABELS: Readonly<Record<CellState, string>> = {
   unique: 'уникален',
   duplicate: 'повтарящ се',
   empty: 'празен',
+  wrong_letter: 'грешна буква',
   invalid: 'невалиден',
 };

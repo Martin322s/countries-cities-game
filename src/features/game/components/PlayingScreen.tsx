@@ -207,6 +207,7 @@ function AnswerSheet({
         readOnly={locked || locking}
         nextFocusRef={readyRef}
         autoFocusFirst
+        letter={round.letter}
       />
 
       <div className="flex flex-col items-center gap-2">

@@ -38,3 +38,12 @@ export function areAnswersEquivalent(a: string, b: string): boolean {
   const normalizedA = normalizeAnswer(a);
   return normalizedA.length > 0 && normalizedA === normalizeAnswer(b);
 }
+
+/**
+ * True when a non-empty answer starts with the round's letter (case-insensitive, after
+ * normalization). The server applies the same rule when scoring (round_cells).
+ */
+export function startsWithLetter(raw: string, letter: string): boolean {
+  const normalized = normalizeAnswer(raw);
+  return normalized.length > 0 && normalized.startsWith(letter.toLocaleLowerCase('bg-BG'));
+}

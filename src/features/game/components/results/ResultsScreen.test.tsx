@@ -87,7 +87,11 @@ function results(revealAt: number | null): RoundResults {
         DESI,
         'Деси',
         1,
-        { country: ['Мексико', 'unique'], city: ['Монтана', 'duplicate', 2] },
+        {
+          country: ['Мексико', 'unique'],
+          city: ['Монтана', 'duplicate', 2],
+          name: ['Кристина', 'wrong_letter'],
+        },
         { round: 1, total: 1 },
       ),
       player(
@@ -240,6 +244,10 @@ describe('ResultsScreen final results', () => {
     ).toBeInTheDocument();
     expect(within(stoyan).getByText(/невалиден, 0 точки/)).toBeInTheDocument();
     expect(within(stoyan).getAllByText(/празен, 0 точки/).length).toBeGreaterThan(0);
+    const desi = screen.getByRole('row', { name: /^Деси/ });
+    expect(
+      within(desi).getByText(/грешна буква, 0 точки. Не започва с буквата на рунда/),
+    ).toBeInTheDocument();
   });
 
   it('keeps rows in participant order and ranks the leaderboard with shared places', async () => {
@@ -274,7 +282,7 @@ describe('ResultsScreen final results', () => {
     const user = userEvent.setup();
     renderResults(TEST_PLAYER_ID);
     const desi = await screen.findByRole('row', { name: /^Деси/ });
-    // Empty answers are not actionable.
+    // Empty and wrong-letter answers are not actionable.
     expect(within(desi).getAllByRole('button')).toHaveLength(2);
 
     await user.click(within(desi).getByRole('button', { name: /Деси, Град: Монтана/ }));

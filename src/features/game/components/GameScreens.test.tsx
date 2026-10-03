@@ -189,17 +189,18 @@ describe('RoundTimer', () => {
 });
 
 describe('AnswerForm keyboard', () => {
-  function renderForm(readOnly = false) {
+  function renderForm(readOnly = false, values = emptyAnswers()) {
     const readyRef = createRef<HTMLButtonElement>();
     const onChange = vi.fn();
     renderWithProviders(
       <>
         <AnswerForm
-          values={emptyAnswers()}
+          values={values}
           onChange={onChange}
           readOnly={readOnly}
           nextFocusRef={readyRef}
           autoFocusFirst={false}
+          letter="Ю"
         />
         <button ref={readyRef} type="button">
           ГОТОВ
@@ -248,6 +249,15 @@ describe('AnswerForm keyboard', () => {
   it('is read-only when locked', () => {
     renderForm(true);
     for (const input of screen.getAllByRole('textbox')) expect(input).toHaveAttribute('readonly');
+  });
+
+  it('warns while typing when an answer does not start with the round letter', () => {
+    renderForm(false, { ...emptyAnswers(), country: 'Югославия', name: 'Кристина' });
+    expect(screen.getByLabelText('Държава')).not.toHaveAttribute('aria-invalid');
+    const name = screen.getByLabelText('Име');
+    expect(name).toHaveAttribute('aria-invalid', 'true');
+    expect(name).toHaveAccessibleDescription('Трябва да започва с „Ю“ — иначе носи 0 точки.');
+    expect(screen.getAllByText(/Трябва да започва с/)).toHaveLength(1);
   });
 });
 
