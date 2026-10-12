@@ -1,21 +1,29 @@
 import type { DenoRuntime } from '../../supabase/functions/deno';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { auth, membership, rpc, serve, env, fetchMock } = vi.hoisted(() => ({
+const { auth, membership, rpc, serve, env, fetchMock, cacheLookup, cacheUpsert } = vi.hoisted(() => ({
   auth: vi.fn(),
   membership: vi.fn(),
   rpc: vi.fn(),
   env: vi.fn(),
   fetchMock: vi.fn(),
+  cacheLookup: vi.fn(),
+  cacheUpsert: vi.fn(),
   serve: vi.fn<(handler: (request: Request) => Response | Promise<Response>) => void>(),
 }));
 vi.mock('@supabase/supabase-js', () => ({
   createClient: () => ({
     auth: { getUser: auth },
     rpc,
-    from: () => ({
-      select: () => ({ eq: () => ({ eq: () => ({ is: () => ({ maybeSingle: membership }) }) }) }),
-    }),
+    from: (table: string) =>
+      table === 'room_players'
+        ? {
+            select: () => ({ eq: () => ({ eq: () => ({ is: () => ({ maybeSingle: membership }) }) }) }),
+          }
+        : {
+            select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: cacheLookup }) }) }),
+            upsert: cacheUpsert,
+          },
   }),
 }));
 
@@ -70,6 +78,8 @@ beforeEach(() => {
   );
   auth.mockResolvedValue({ data: { user: { id: playerId } }, error: null });
   membership.mockResolvedValue({ data: { player_id: playerId }, error: null });
+  cacheLookup.mockResolvedValue({ data: null, error: null });
+  cacheUpsert.mockResolvedValue({ error: null });
   rpc.mockReset();
   rpc
     .mockResolvedValueOnce({
@@ -140,6 +150,29 @@ describe('trusted AI worker', () => {
       p_claim: claim,
       p_results: [{ player_id: playerId, category: 'country', status: 'VALID', reason: null, suggestion: null, model: 'country-database' }],
     });
+  });
+  it('identifies the application to Nominatim with its real production origin', async () => {
+    rpc.mockReset().mockResolvedValueOnce({
+      data: {
+        claim,
+        letter: 'В',
+        answers: [{ player_id: playerId, category: 'city', value: 'Варна' }],
+      },
+      error: null,
+    }).mockResolvedValue({ data: true, error: null });
+    fetchMock.mockResolvedValueOnce(new Response('[]', { status: 200 }));
+
+    const response = await handler(request());
+
+    expect(response.status).toBe(200);
+    const [url, options] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    expect(String(url)).toContain('https://nominatim.openstreetmap.org/search');
+    expect(new Headers(options.headers).get('user-agent')).toBe(
+      'countries-cities-game/1.0 (+https://countries-cities.netlify.app/)',
+    );
+    expect(new Headers(options.headers).get('referer')).toBe('https://countries-cities.netlify.app/');
+    expect(String(url)).toContain('q=%D0%92%D0%B0%D1%80%D0%BD%D0%B0');
+    expect(cacheUpsert).toHaveBeenCalled();
   });
   it('does not call the model when another worker already claimed the job', async () => {
     rpc.mockReset().mockResolvedValue({ data: null, error: null });

@@ -8,6 +8,11 @@ const headers = {
   'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 };
+const NOMINATIM_HEADERS = {
+  'User-Agent': 'countries-cities-game/1.0 (+https://countries-cities.netlify.app/)',
+  Referer: 'https://countries-cities.netlify.app/',
+  'Accept-Language': 'bg,en',
+};
 const reply = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers });
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -350,11 +355,7 @@ async function validateGeographicAnswer(
   url.searchParams.set('q', answer);
 
   const response = await fetch(url, {
-    headers: {
-      'User-Agent': 'countries-cities-game/1.0 (contact: support@example.invalid)',
-      Referer: 'https://countries-cities-game.example/',
-      'Accept-Language': 'bg,en',
-    },
+    headers: NOMINATIM_HEADERS,
     signal: AbortSignal.timeout(10_000),
   });
   if (!response.ok) {
