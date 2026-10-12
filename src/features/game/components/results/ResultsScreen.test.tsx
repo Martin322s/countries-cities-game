@@ -174,6 +174,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.clearAllMocks();
+  vi.unstubAllEnvs();
 });
 
 const table = () => screen.getByRole('table');
@@ -272,11 +273,36 @@ describe('ResultsScreen final results', () => {
     ).toBeInTheDocument();
   });
 
+  it('shows a map button for geographic answers and opens a Google Maps modal', async () => {
+    vi.stubEnv('VITE_GOOGLE_MAPS_EMBED_KEY', 'test-google-key');
+    const user = userEvent.setup();
+    renderResults(DESI);
+    const stoyan = await screen.findByRole('row', { name: /^Стоян/ });
+    const mapButton = within(stoyan).getByRole('button', { name: /Покажи Малта на картата/ });
+    expect(mapButton).toBeInTheDocument();
+    expect(within(stoyan).queryByRole('button', { name: /Покажи Мечка на картата/ })).not.toBeInTheDocument();
+
+    await user.click(mapButton);
+    const dialog = await screen.findByRole('dialog', { name: 'Малта' });
+    const iframe = within(dialog).getByTitle('Google Maps for Малта');
+    expect(iframe).toHaveAttribute('src', expect.stringContaining('key=test-google-key'));
+    expect(iframe).toHaveAttribute('src', expect.stringContaining('q=%D0%9C%D0%B0%D0%BB%D1%82%D0%B0%20%D0%94%D1%8A%D1%80%D0%B6%D0%B0%D0%B2%D0%B0'));
+    await user.click(within(dialog).getAllByRole('button', { name: 'Затвори' })[0]!);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('hides the map button when the Google Maps key is missing', async () => {
+    vi.stubEnv('VITE_GOOGLE_MAPS_EMBED_KEY', '');
+    renderResults(DESI);
+    const stoyan = await screen.findByRole('row', { name: /^Стоян/ });
+    expect(within(stoyan).queryByRole('button', { name: /Покажи Малта на картата/ })).not.toBeInTheDocument();
+  });
+
   it('lets non-hosts read explanations without changing answers', async () => {
     const user = userEvent.setup();
     renderResults(DESI);
     await screen.findByRole('row', { name: /^Стоян/ });
-    expect(within(table()).getAllByRole('button')).toHaveLength(1);
+    expect(within(table()).getByRole('button', { name: /Стоян, Животно: Мечка/ })).toBeInTheDocument();
     await user.click(within(table()).getByRole('button', { name: /Стоян, Животно: Мечка/ }));
     const dialog = screen.getByRole('dialog', { name: 'Стоян · Животно' });
     expect(within(dialog).getByRole('region', { name: 'Причина за анулиране' })).toHaveTextContent(
@@ -292,8 +318,7 @@ describe('ResultsScreen final results', () => {
     const user = userEvent.setup();
     renderResults(TEST_PLAYER_ID);
     const desi = await screen.findByRole('row', { name: /^Деси/ });
-    // Empty and wrong-letter answers are not actionable.
-    expect(within(desi).getAllByRole('button')).toHaveLength(2);
+    expect(within(desi).getByRole('button', { name: /Деси, Град: Монтана/ })).toBeInTheDocument();
 
     await user.click(within(desi).getByRole('button', { name: /Деси, Град: Монтана/ }));
     const dialog = screen.getByRole('dialog', { name: 'Деси · Град' });
@@ -406,7 +431,7 @@ describe('ResultsScreen history', () => {
     await user.click(screen.getByRole('button', { name: 'Предишен рунд' }));
     expect(await screen.findByRole('heading', { name: 'ПРЕДИШЕН РУНД' })).toBeInTheDocument();
     expect(screen.getByText(/само за преглед/)).toBeInTheDocument();
-    expect(within(screen.getByRole('table')).getAllByRole('button')).toHaveLength(1);
+    expect(within(screen.getByRole('table')).getByRole('button', { name: /Стоян, Животно: Мечка/ })).toBeInTheDocument();
     await user.click(
       within(screen.getByRole('table')).getByRole('button', { name: /Стоян, Животно: Мечка/ }),
     );

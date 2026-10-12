@@ -155,3 +155,12 @@ export function SpeakerOffIcon(props: SVGProps<SVGSVGElement>) {
     </Icon>
   );
 }
+
+export function MapPinIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <Icon {...props}>
+      <path d="M12 21s6-5.4 6-11a6 6 0 1 0-12 0c0 5.6 6 11 6 11Z" />
+      <circle cx="12" cy="10" r="2.5" />
+    </Icon>
+  );
+}
