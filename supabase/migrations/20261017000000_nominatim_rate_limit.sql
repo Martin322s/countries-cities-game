@@ -24,7 +24,10 @@ begin
    where id
    for update;
 
-  v_wait_ms := greatest(0, ceil(extract(epoch from (v_next - v_now)) * 1000)::integer);
+  v_wait_ms := case
+    when isfinite(v_next) then greatest(0, ceil(extract(epoch from (v_next - v_now)) * 1000)::integer)
+    else 0
+  end;
 
   update public.geographic_validation_rate_limit
      set next_request_at = greatest(v_next, v_now) + interval '1 second'
