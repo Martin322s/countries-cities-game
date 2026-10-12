@@ -39,6 +39,15 @@ export function AppLayout() {
         <span>Без регистрация · Играй от телефон или компютър</span>
         <span aria-hidden="true">·</span>
         <a
+          href="https://www.geoapify.com/"
+          target="_blank"
+          rel="noreferrer"
+          className="underline-offset-4 hover:text-fg-muted hover:underline"
+        >
+          Powered by Geoapify
+        </a>
+        <span aria-hidden="true">·</span>
+        <a
           href="https://www.openstreetmap.org/copyright"
           target="_blank"
           rel="noreferrer"

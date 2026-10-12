@@ -1,16 +1,18 @@
 import type { DenoRuntime } from '../../supabase/functions/deno';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { auth, membership, rpc, serve, env, fetchMock, cacheLookup, cacheUpsert } = vi.hoisted(() => ({
-  auth: vi.fn(),
-  membership: vi.fn(),
-  rpc: vi.fn(),
-  env: vi.fn(),
-  fetchMock: vi.fn(),
-  cacheLookup: vi.fn(),
-  cacheUpsert: vi.fn(),
-  serve: vi.fn<(handler: (request: Request) => Response | Promise<Response>) => void>(),
-}));
+const { auth, membership, rpc, serve, env, fetchMock, cacheLookup, cacheUpsert } = vi.hoisted(
+  () => ({
+    auth: vi.fn(),
+    membership: vi.fn(),
+    rpc: vi.fn(),
+    env: vi.fn(),
+    fetchMock: vi.fn(),
+    cacheLookup: vi.fn(),
+    cacheUpsert: vi.fn(),
+    serve: vi.fn<(handler: (request: Request) => Response | Promise<Response>) => void>(),
+  }),
+);
 vi.mock('@supabase/supabase-js', () => ({
   createClient: () => ({
     auth: { getUser: auth },
@@ -18,7 +20,9 @@ vi.mock('@supabase/supabase-js', () => ({
     from: (table: string) =>
       table === 'room_players'
         ? {
-            select: () => ({ eq: () => ({ eq: () => ({ is: () => ({ maybeSingle: membership }) }) }) }),
+            select: () => ({
+              eq: () => ({ eq: () => ({ is: () => ({ maybeSingle: membership }) }) }),
+            }),
           }
         : {
             select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: cacheLookup }) }) }),
@@ -38,6 +42,42 @@ const request = (body: unknown = { roomId, roundId }, token = true) =>
     headers: token ? { Authorization: 'Bearer user-token' } : {},
     body: JSON.stringify(body),
   });
+const geoapifyFeature = (
+  name: string,
+  place: string,
+  country_code = 'bg',
+  nameVariants: Record<string, string> = {},
+) => ({
+  name,
+  result_type: place,
+  country_code,
+  datasource: { raw: { name, place, ...nameVariants } },
+});
+const setGeoAnswers = (answers: Array<{ category: string; value: string }>, letter = 'В') => {
+  rpc
+    .mockReset()
+    .mockResolvedValueOnce({
+      data: {
+        claim,
+        letter,
+        answers: answers.map(({ category, value }) => ({ player_id: playerId, category, value })),
+      },
+      error: null,
+    })
+    .mockResolvedValue({ data: true, error: null });
+};
+const completedResults = async () => {
+  const response = await handler(request());
+  expect(response.status).toBe(200);
+  const completion = rpc.mock.calls.find(([name]) => name === 'complete_ai_validation');
+  if (!completion) throw new Error('Validation did not complete');
+  const results = completion[1].p_results as Array<{
+    status: string;
+    reason: string | null;
+    model: string;
+  }>;
+  return results.map(({ status, reason, model }) => ({ status, reason, model }));
+};
 const modelResponse = (index = 0) =>
   new Response(
     JSON.stringify({
@@ -74,6 +114,7 @@ beforeEach(() => {
         SUPABASE_SERVICE_ROLE_KEY: 'test-service-key',
         OPENAI_API_KEY: 'test-api-key',
         OPENAI_MODEL: 'test-model',
+        GEOAPIFY_API_KEY: 'test-geoapify-secret',
       })[name as 'SUPABASE_URL'],
   );
   auth.mockResolvedValue({ data: { user: { id: playerId } }, error: null });
@@ -133,14 +174,17 @@ describe('trusted AI worker', () => {
     expect(await response.json()).toEqual({ state: 'completed' });
   });
   it('skips the model for country, city and village answers', async () => {
-    rpc.mockReset().mockResolvedValueOnce({
-      data: {
-        claim,
-        letter: 'Я',
-        answers: [{ player_id: playerId, category: 'country', value: 'Ямайка' }],
-      },
-      error: null,
-    }).mockResolvedValue({ data: true, error: null });
+    rpc
+      .mockReset()
+      .mockResolvedValueOnce({
+        data: {
+          claim,
+          letter: 'Я',
+          answers: [{ player_id: playerId, category: 'country', value: 'Ямайка' }],
+        },
+        error: null,
+      })
+      .mockResolvedValue({ data: true, error: null });
     const response = await handler(request());
     expect(response.status).toBe(200);
     expect(fetchMock).not.toHaveBeenCalled();
@@ -148,36 +192,203 @@ describe('trusted AI worker', () => {
       p_room_id: roomId,
       p_round_id: roundId,
       p_claim: claim,
-      p_results: [{ player_id: playerId, category: 'country', status: 'VALID', reason: null, suggestion: null, model: 'country-database' }],
+      p_results: [
+        {
+          player_id: playerId,
+          category: 'country',
+          status: 'VALID',
+          reason: null,
+          suggestion: null,
+          model: 'country-database',
+        },
+      ],
     });
   });
-  it('identifies the application to Nominatim with its real production origin', async () => {
-    rpc
-      .mockReset()
-      .mockResolvedValueOnce({
-        data: {
-          claim,
-          letter: 'В',
-          answers: [{ player_id: playerId, category: 'city', value: 'Варна' }],
-        },
-        error: null,
-      })
-      .mockResolvedValueOnce({ data: 0, error: null })
-      .mockResolvedValue({ data: true, error: null });
-    fetchMock.mockResolvedValueOnce(new Response('[]', { status: 200 }));
-
-    const response = await handler(request());
-
-    expect(response.status).toBe(200);
-    const [url, options] = fetchMock.mock.calls[0] as [URL, RequestInit];
-    expect(String(url)).toContain('https://nominatim.openstreetmap.org/search');
-    expect(new Headers(options.headers).get('user-agent')).toBe(
-      'countries-cities-game/1.0 (+https://countries-cities.netlify.app/)',
+  it('queries Geoapify for city answers and accepts an exact Bulgarian name', async () => {
+    setGeoAnswers([{ category: 'city', value: 'Варна' }]);
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ results: [geoapifyFeature('Варна', 'city')] }), {
+        status: 200,
+      }),
     );
-    expect(new Headers(options.headers).get('referer')).toBe('https://countries-cities.netlify.app/');
-    expect(String(url)).toContain('q=%D0%92%D0%B0%D1%80%D0%BD%D0%B0');
-    expect(rpc).toHaveBeenCalledWith('reserve_geographic_lookup_slot');
+
+    const results = await completedResults();
+    expect(results).toEqual([{ status: 'VALID', reason: null, model: 'geoapify' }]);
+    const [url, options] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    expect(url.origin + url.pathname).toBe('https://api.geoapify.com/v1/geocode/search');
+    expect(url.searchParams.get('text')).toBe('Варна');
+    expect(url.searchParams.get('format')).toBe('json');
+    expect(url.searchParams.get('bias')).toBe('countrycode:none');
+    expect(url.searchParams.get('apiKey')).toBe('test-geoapify-secret');
+    expect(options.headers).toBeUndefined();
     expect(cacheUpsert).toHaveBeenCalled();
+  });
+  it('matches an exact returned English name variant without fuzzy correction', async () => {
+    setGeoAnswers([{ category: 'city', value: 'Varna' }], 'V');
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          results: [geoapifyFeature('Варна', 'city', 'bg', { 'name:en': 'Varna' })],
+        }),
+        { status: 200 },
+      ),
+    );
+    expect(await completedResults()).toEqual([
+      { status: 'VALID', reason: null, model: 'geoapify' },
+    ]);
+  });
+  it('rejects a city result when the answer is requested as a village', async () => {
+    setGeoAnswers([{ category: 'village', value: 'Варна' }]);
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ results: [geoapifyFeature('Варна', 'city')] }), {
+        status: 200,
+      }),
+    );
+    expect(await completedResults()).toEqual([
+      { status: 'INVALID', reason: 'WRONG_CATEGORY', model: 'geoapify' },
+    ]);
+  });
+  it('accepts София as a city but never accepts the one-letter typo Софиа', async () => {
+    setGeoAnswers([{ category: 'city', value: 'София' }], 'С');
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ results: [geoapifyFeature('София', 'city')] }), {
+        status: 200,
+      }),
+    );
+    expect(await completedResults()).toEqual([
+      { status: 'VALID', reason: null, model: 'geoapify' },
+    ]);
+
+    setGeoAnswers([{ category: 'city', value: 'Софиа' }], 'С');
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ results: [geoapifyFeature('София', 'city')] }), {
+        status: 200,
+      }),
+    );
+    expect(await completedResults()).toEqual([
+      { status: 'INVALID', reason: 'MISSPELLING', model: 'geoapify' },
+    ]);
+  });
+  it('accepts an exact village result and rejects a village when requested as a city', async () => {
+    setGeoAnswers([{ category: 'village', value: 'Баня' }], 'Б');
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ results: [geoapifyFeature('Баня', 'village')] }), {
+        status: 200,
+      }),
+    );
+    expect(await completedResults()).toEqual([
+      { status: 'VALID', reason: null, model: 'geoapify' },
+    ]);
+
+    setGeoAnswers([{ category: 'city', value: 'Баня' }], 'Б');
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ results: [geoapifyFeature('Баня', 'village')] }), {
+        status: 200,
+      }),
+    );
+    expect(await completedResults()).toEqual([
+      { status: 'INVALID', reason: 'WRONG_CATEGORY', model: 'geoapify' },
+    ]);
+  });
+  it('accepts an exact same-name place of the requested type among locations in different countries', async () => {
+    setGeoAnswers([{ category: 'city', value: 'Баня' }], 'Б');
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          results: [
+            geoapifyFeature('Баня', 'village', 'bg'),
+            geoapifyFeature('Баня', 'town', 'rs'),
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+    expect(await completedResults()).toEqual([
+      { status: 'VALID', reason: null, model: 'geoapify' },
+    ]);
+  });
+  it('returns does-not-exist when Geoapify has no exact or near-name result', async () => {
+    setGeoAnswers([{ category: 'city', value: 'Варна' }]);
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ results: [] }), { status: 200 }));
+    expect(await completedResults()).toEqual([
+      { status: 'INVALID', reason: 'DOES_NOT_EXIST', model: 'geoapify' },
+    ]);
+  });
+  it.each([401, 403, 429, 503])(
+    'treats Geoapify HTTP %s as a provider failure, not a missing place',
+    async (status) => {
+      setGeoAnswers([{ category: 'city', value: 'Варна' }]);
+      fetchMock.mockResolvedValueOnce(new Response('{"message":"provider error"}', { status }));
+      const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      const response = await handler(request());
+      expect(response.status).toBe(503);
+      expect(rpc.mock.calls.some(([name]) => name === 'complete_ai_validation')).toBe(false);
+      expect(rpc).toHaveBeenCalledWith('release_ai_validation', {
+        p_round_id: roundId,
+        p_claim: claim,
+      });
+      const providerLog = errorSpy.mock.calls.find(
+        ([message]) => message === 'Geographic provider request failed',
+      );
+      expect(providerLog?.[1]).toMatchObject({
+        provider: 'geoapify',
+        status,
+        normalizedQuery: 'варна',
+      });
+      expect(JSON.stringify(errorSpy.mock.calls)).not.toContain('test-geoapify-secret');
+      errorSpy.mockRestore();
+    },
+  );
+  it('treats an unknown settlement type as ambiguous rather than a city', async () => {
+    setGeoAnswers([{ category: 'city', value: 'Варна' }]);
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ results: [geoapifyFeature('Варна', 'suburb')] }), {
+        status: 200,
+      }),
+    );
+    expect(await completedResults()).toEqual([
+      { status: 'INVALID', reason: 'AMBIGUOUS', model: 'geoapify' },
+    ]);
+  });
+  it('uses a Geoapify cache hit without making a provider request', async () => {
+    setGeoAnswers([{ category: 'city', value: 'Варна' }]);
+    cacheLookup.mockResolvedValueOnce({
+      data: { result: { status: 'VALID', reason: null, suggestion: null, model: 'geoapify' } },
+      error: null,
+    });
+    expect(await completedResults()).toEqual([
+      { status: 'VALID', reason: null, model: 'geoapify' },
+    ]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it('looks up an identical answer only once per round', async () => {
+    setGeoAnswers([
+      { category: 'city', value: 'Варна' },
+      { category: 'city', value: ' Варна ' },
+    ]);
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ results: [geoapifyFeature('Варна', 'city')] }), {
+        status: 200,
+      }),
+    );
+    expect(await completedResults()).toHaveLength(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  it('reuses identical place results across city and village answers in the same round', async () => {
+    setGeoAnswers([
+      { category: 'city', value: 'Варна' },
+      { category: 'village', value: 'Варна' },
+    ]);
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ results: [geoapifyFeature('Варна', 'city')] }), {
+        status: 200,
+      }),
+    );
+    expect(await completedResults()).toEqual([
+      { status: 'VALID', reason: null, model: 'geoapify' },
+      { status: 'INVALID', reason: 'WRONG_CATEGORY', model: 'geoapify' },
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
   it('does not call the model when another worker already claimed the job', async () => {
     rpc.mockReset().mockResolvedValue({ data: null, error: null });
@@ -185,14 +396,17 @@ describe('trusted AI worker', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
   it('releases a failed lease and never publishes forged or incomplete model decisions', async () => {
-    rpc.mockReset().mockResolvedValueOnce({
-      data: {
-        claim,
-        letter: 'М',
-        answers: [{ player_id: playerId, category: 'animal', value: 'Мечка' }],
-      },
-      error: null,
-    }).mockResolvedValue({ data: true, error: null });
+    rpc
+      .mockReset()
+      .mockResolvedValueOnce({
+        data: {
+          claim,
+          letter: 'М',
+          answers: [{ player_id: playerId, category: 'animal', value: 'Мечка' }],
+        },
+        error: null,
+      })
+      .mockResolvedValue({ data: true, error: null });
     fetchMock.mockResolvedValueOnce(modelResponse(999));
     const response = await handler(request());
     expect(response.status).toBe(503);

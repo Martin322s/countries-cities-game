@@ -1,17 +1,22 @@
-﻿﻿import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+﻿import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import type {
+  GeographicPlaceProvider,
+  GeographicPlaceRecord,
+} from '../../../src/domain/validation.ts';
 import type { Database } from '../../../src/shared/lib/database.types';
-import { extractResponseText, judgeInstructions, resultSchema, type LockedAnswer } from './protocol.ts';
+import {
+  extractResponseText,
+  judgeInstructions,
+  resultSchema,
+  type LockedAnswer,
+} from './protocol.ts';
+import { GeoapifyPlaceProvider, GeoapifyProviderError } from './geoapifyPlaceProvider.ts';
 
 const headers = {
   'Content-Type': 'application/json',
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-const NOMINATIM_HEADERS = {
-  'User-Agent': 'countries-cities-game/1.0 (+https://countries-cities.netlify.app/)',
-  Referer: 'https://countries-cities.netlify.app/',
-  'Accept-Language': 'bg,en',
 };
 const reply = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers });
@@ -90,7 +95,7 @@ const COUNTRY_SET = new Set([
   'комори',
   'конго',
   'коста рика',
-  'кот д\'ивуар',
+  "кот д'ивуар",
   'кроация',
   'куба',
   'кувейт',
@@ -198,9 +203,13 @@ const COUNTRY_SET = new Set([
 
 const normalize = (value: string) =>
   value.normalize('NFC').trim().replace(/\s+/g, ' ').toLocaleLowerCase('bg-BG');
+const normalizeGeoName = (value: string) =>
+  value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('bg-BG');
 
 function levenshtein(left: string, right: string): number {
-  const distances = Array.from({ length: left.length + 1 }, () => new Array<number>(right.length + 1).fill(0));
+  const distances = Array.from({ length: left.length + 1 }, () =>
+    new Array<number>(right.length + 1).fill(0),
+  );
   for (let i = 0; i <= left.length; i++) distances[i]![0] = i;
   for (let j = 0; j <= right.length; j++) distances[0]![j] = j;
   for (let i = 1; i <= left.length; i++) {
@@ -217,7 +226,10 @@ function levenshtein(left: string, right: string): number {
   return distances[left.length]?.[right.length] ?? 0;
 }
 
-function validateCountryDecision(answer: string, letter: string): { status: 'VALID' | 'INVALID'; reason: string | null; suggestion: string | null } {
+function validateCountryDecision(
+  answer: string,
+  letter: string,
+): { status: 'VALID' | 'INVALID'; reason: string | null; suggestion: string | null } {
   const normalized = normalize(answer);
   const letterNormalized = normalize(letter);
   if (!normalized) return { status: 'INVALID', reason: 'DOES_NOT_EXIST', suggestion: null };
@@ -236,33 +248,6 @@ function validateCountryDecision(answer: string, letter: string): { status: 'VAL
   return { status: 'INVALID', reason: 'DOES_NOT_EXIST', suggestion: null };
 }
 
-function getPlaceType(type: string): string {
-  switch (type.toLowerCase()) {
-    case 'city':
-    case 'town':
-      return 'city';
-    case 'village':
-      return 'village';
-    default:
-      return 'unknown';
-  }
-}
-
-function exactNameMatch(answer: string, result: Record<string, unknown>): boolean {
-  const normalizedAnswer = normalize(answer);
-  const names = [
-    typeof result.display_name === 'string' ? result.display_name : '',
-    typeof result.name === 'string' ? result.name : '',
-    typeof result.canonical_name === 'string' ? result.canonical_name : '',
-    ...(typeof result.namedetails === 'object' && result.namedetails !== null && !Array.isArray(result.namedetails)
-      ? Object.values(result.namedetails as Record<string, string>)
-      : []),
-  ]
-    .map((value) => normalize(value))
-    .filter(Boolean);
-  return names.includes(normalizedAnswer);
-}
-
 type GeographicValidationResult = {
   status: 'VALID' | 'INVALID';
   reason: string | null;
@@ -270,18 +255,29 @@ type GeographicValidationResult = {
   model: string;
 };
 
-async function fetchCachedGeographicResult(admin: SupabaseClient<Database>, name: string, category: string) {
+async function fetchCachedGeographicResult(
+  admin: SupabaseClient<Database>,
+  name: string,
+  category: string,
+) {
   try {
     const cache = admin.from('geographic_validation_cache' as never) as any;
     const { data, error } = await cache
       .select('*')
-      .eq('normalized_name', normalize(name))
+      .eq('normalized_name', `geoapify-v1:${normalizeGeoName(name)}`)
       .eq('requested_category', category)
       .maybeSingle();
+    if (error) {
+      console.warn('Geoapify cache read failed', { code: error.code, message: error.message });
+      return undefined;
+    }
     const row = data as { result?: unknown } | null;
-    if (!error && row && typeof row.result === 'object' && row.result !== null) return row.result as Record<string, unknown>;
-  } catch {
-    // Ignore cache errors and fall back to a fresh provider lookup.
+    if (row && typeof row.result === 'object' && row.result !== null)
+      return row.result as Record<string, unknown>;
+  } catch (error) {
+    console.warn('Geoapify cache read failed', {
+      message: error instanceof Error ? error.message.slice(0, 200) : 'Unknown cache error',
+    });
   }
   return undefined;
 }
@@ -291,21 +287,19 @@ async function storeCachedGeographicResult(
   name: string,
   category: string,
   decision: Record<string, unknown>,
-  osmType?: string,
-  osmId?: number,
   canonicalName?: string,
   countryCode?: string,
   rawMetadata?: Record<string, unknown>,
 ) {
   try {
     const cache = admin.from('geographic_validation_cache' as never) as any;
-    await cache.upsert(
+    const { error } = await cache.upsert(
       {
-        normalized_name: normalize(name),
+        normalized_name: `geoapify-v1:${normalizeGeoName(name)}`,
         requested_category: category,
         result: decision,
-        osm_type: osmType ?? null,
-        osm_id: osmId ?? null,
+        osm_type: null,
+        osm_id: null,
         canonical_name: canonicalName ?? name,
         country_code: countryCode ?? null,
         raw_metadata: rawMetadata ?? null,
@@ -313,100 +307,116 @@ async function storeCachedGeographicResult(
       },
       { onConflict: 'normalized_name,requested_category' },
     );
-  } catch {
-    // Keep validation resilient even when the cache table is unavailable.
+    if (error)
+      console.warn('Geoapify cache write failed', { code: error.code, message: error.message });
+  } catch (error) {
+    console.warn('Geoapify cache write failed', {
+      message: error instanceof Error ? error.message.slice(0, 200) : 'Unknown cache error',
+    });
   }
-}
-
-async function waitForGeographicLookupSlot(admin: SupabaseClient<Database>) {
-  const { data: waitMs, error } = await admin.rpc('reserve_geographic_lookup_slot');
-  if (error) throw new Error(`Could not reserve Nominatim request slot: ${error.message}`);
-  if (typeof waitMs !== 'number' || !Number.isFinite(waitMs) || waitMs < 0) {
-    throw new Error('Invalid Nominatim request slot');
-  }
-  if (waitMs > 0) await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
 }
 
 async function validateGeographicAnswer(
   admin: SupabaseClient<Database>,
+  provider: GeographicPlaceProvider,
   answer: string,
   letter: string,
   category: string,
+  lookupMemo: Map<string, Promise<GeographicPlaceRecord[]>>,
 ): Promise<GeographicValidationResult> {
-  const normalized = normalize(answer);
-  const letterNormalized = normalize(letter);
+  const normalized = normalizeGeoName(answer);
+  const letterNormalized = normalizeGeoName(letter);
   if (!normalized) {
-    return { status: 'INVALID', reason: 'DOES_NOT_EXIST', suggestion: null, model: 'country-database' };
+    return { status: 'INVALID', reason: 'DOES_NOT_EXIST', suggestion: null, model: 'geoapify' };
   }
   if (!normalized.startsWith(letterNormalized)) {
-    return { status: 'INVALID', reason: 'WRONG_LETTER', suggestion: null, model: 'country-database' };
+    return { status: 'INVALID', reason: 'WRONG_LETTER', suggestion: null, model: 'geoapify' };
   }
-  if (category === 'country') {
-    const decision = validateCountryDecision(answer, letter);
-    return { ...decision, model: 'country-database' };
-  }
-
   const cached = await fetchCachedGeographicResult(admin, answer, category);
-  if (cached) {
+  if (cached?.model === 'geoapify') {
+    const status = cached.status === 'VALID' ? 'VALID' : 'INVALID';
+    const validReason = new Set([
+      'WRONG_LETTER',
+      'MISSPELLING',
+      'DOES_NOT_EXIST',
+      'WRONG_CATEGORY',
+      'AMBIGUOUS',
+    ]);
+    const reason =
+      typeof cached.reason === 'string' && validReason.has(cached.reason) ? cached.reason : null;
     return {
-      status: (cached.status as 'VALID' | 'INVALID') ?? 'INVALID',
-      reason: typeof cached.reason === 'string' ? cached.reason : null,
+      status,
+      reason: status === 'VALID' ? null : (reason ?? 'AMBIGUOUS'),
       suggestion: typeof cached.suggestion === 'string' ? cached.suggestion : null,
-      model: 'nominatim',
+      model: 'geoapify',
     };
   }
 
-  const url = new URL('https://nominatim.openstreetmap.org/search');
-  url.searchParams.set('format', 'jsonv2');
-  url.searchParams.set('addressdetails', '1');
-  url.searchParams.set('namedetails', '1');
-  url.searchParams.set('limit', '10');
-  url.searchParams.set('q', answer);
-
-  await waitForGeographicLookupSlot(admin);
-  const response = await fetch(url, {
-    headers: NOMINATIM_HEADERS,
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!response.ok) {
-    const details = (await response.text()).replace(/\s+/g, ' ').slice(0, 300);
-    throw new Error(`Nominatim lookup failed: ${response.status}${details ? ` — ${details}` : ''}`);
+  const normalizedAnswer = normalizeGeoName(answer);
+  let placesPromise = lookupMemo.get(normalizedAnswer);
+  if (!placesPromise) {
+    placesPromise = provider.lookupPlace(answer);
+    lookupMemo.set(normalizedAnswer, placesPromise);
+  }
+  let places: GeographicPlaceRecord[];
+  try {
+    places = await placesPromise;
+  } catch (error) {
+    lookupMemo.delete(normalizedAnswer);
+    throw error;
   }
 
-  const payload = (await response.json()) as Record<string, unknown>[];
-  const exactMatches = payload.filter((entry) => exactNameMatch(answer, entry));
+  const exactMatches = places.filter((place) =>
+    place.names.some((name) => normalizeGeoName(name) === normalizedAnswer),
+  );
   if (!exactMatches.length) {
-    const decision: GeographicValidationResult = { status: 'INVALID', reason: 'DOES_NOT_EXIST', suggestion: null, model: 'nominatim' };
+    const misspelling = places
+      .flatMap((place) => place.names.map((name) => ({ place, name })))
+      .map(({ place, name }) => ({
+        place,
+        name,
+        distance: levenshtein(normalizedAnswer, normalizeGeoName(name)),
+      }))
+      .filter(({ distance }) => distance > 0 && distance <= 1)
+      .sort((left, right) => left.distance - right.distance)[0];
+    const decision: GeographicValidationResult = {
+      status: 'INVALID',
+      reason: misspelling ? 'MISSPELLING' : 'DOES_NOT_EXIST',
+      suggestion: misspelling?.name ?? null,
+      model: 'geoapify',
+    };
     await storeCachedGeographicResult(admin, answer, category, decision);
     return decision;
   }
 
-  const acceptedTypes = category === 'city' ? ['city', 'town'] : ['village'];
-  const accepted = exactMatches.filter((entry) => acceptedTypes.includes(getPlaceType(String(entry.type ?? 'unknown'))));
-  if (accepted.length) {
-    const match = accepted[0];
-    if (!match) {
-      const decision: GeographicValidationResult = { status: 'INVALID', reason: 'DOES_NOT_EXIST', suggestion: null, model: 'nominatim' };
-      return decision;
-    }
-    const decision: GeographicValidationResult = { status: 'VALID', reason: null, suggestion: null, model: 'nominatim' };
+  const requestedType = category === 'city' ? 'city' : 'village';
+  const exactWithRequestedType = exactMatches.find((place) => place.placeType === requestedType);
+  if (exactWithRequestedType) {
+    const decision: GeographicValidationResult = {
+      status: 'VALID',
+      reason: null,
+      suggestion: null,
+      model: 'geoapify',
+    };
     await storeCachedGeographicResult(
       admin,
       answer,
       category,
       decision,
-      String(match.type ?? 'unknown'),
-      typeof match.osm_id === 'number' ? match.osm_id : undefined,
-      typeof match.display_name === 'string' ? match.display_name : answer,
-      typeof match.address === 'object' && match.address !== null && 'country_code' in match.address
-        ? String((match.address as Record<string, unknown>).country_code)
-        : undefined,
-      match,
+      exactWithRequestedType.canonicalName,
+      exactWithRequestedType.countryCode,
+      exactWithRequestedType.raw,
     );
     return decision;
   }
 
-  const decision: GeographicValidationResult = { status: 'INVALID', reason: 'WRONG_CATEGORY', suggestion: null, model: 'nominatim' };
+  const hasAmbiguousExact = exactMatches.some((place) => place.placeType === 'unknown');
+  const decision: GeographicValidationResult = {
+    status: 'INVALID',
+    reason: hasAmbiguousExact ? 'AMBIGUOUS' : 'WRONG_CATEGORY',
+    suggestion: null,
+    model: 'geoapify',
+  };
   await storeCachedGeographicResult(admin, answer, category, decision);
   return decision;
 }
@@ -476,20 +486,47 @@ Deno.serve(async (req: Request) => {
   }
   if (!rawJob) return reply(202, { state: 'already_running_or_finished' });
   const job = rawJob as unknown as { claim: string; letter: string; answers: LockedAnswer[] };
+  const geoapifyProvider = new GeoapifyPlaceProvider(Deno.env.get('GEOAPIFY_API_KEY') ?? '');
   const model = Deno.env.get('OPENAI_MODEL') ?? 'gpt-4.1-mini';
   let stage = 'prepare';
   try {
-    const byIndex = new Map<number, { index: number; status: 'VALID' | 'INVALID'; reason: string | null; suggestion: string | null; model: string }>();
+    const byIndex = new Map<
+      number,
+      {
+        index: number;
+        status: 'VALID' | 'INVALID';
+        reason: string | null;
+        suggestion: string | null;
+        model: string;
+      }
+    >();
     const nonGeographicRows: Array<{ index: number; category: string; value: string }> = [];
+    const geographicLookups = new Map<string, Promise<GeographicPlaceRecord[]>>();
     for (const [index, answer] of job.answers.entries()) {
       const trimmed = answer.value.trim();
       if (!trimmed) {
-        byIndex.set(index, { index, status: 'INVALID', reason: 'DOES_NOT_EXIST', suggestion: null, model: 'empty' });
+        byIndex.set(index, {
+          index,
+          status: 'INVALID',
+          reason: 'DOES_NOT_EXIST',
+          suggestion: null,
+          model: 'empty',
+        });
         continue;
       }
       if (GEOGRAPHIC_CATEGORIES.has(answer.category)) {
         stage = 'geographic-validation';
-        const decision = await validateGeographicAnswer(admin, answer.value, job.letter, answer.category);
+        const decision =
+          answer.category === 'country'
+            ? { ...validateCountryDecision(answer.value, job.letter), model: 'country-database' }
+            : await validateGeographicAnswer(
+                admin,
+                geoapifyProvider,
+                answer.value,
+                job.letter,
+                answer.category,
+                geographicLookups,
+              );
         byIndex.set(index, { index, ...decision });
         continue;
       }
@@ -518,7 +555,9 @@ Deno.serve(async (req: Request) => {
         }),
       });
       if (!response.ok) throw new Error(`Model request failed with status ${response.status}`);
-      const parsed = JSON.parse(extractResponseText(await response.json())) as { results?: Array<Record<string, unknown>> };
+      const parsed = JSON.parse(extractResponseText(await response.json())) as {
+        results?: Array<Record<string, unknown>>;
+      };
       const expectedIndexes = new Set(nonGeographicRows.map((entry) => entry.index));
       const receivedIndexes = new Set<number>();
       for (const item of parsed.results ?? []) {
@@ -546,7 +585,12 @@ Deno.serve(async (req: Request) => {
           index,
           status,
           reason,
-          suggestion: wrongLetter || status === 'VALID' ? null : (typeof item.suggestion === 'string' ? item.suggestion : null),
+          suggestion:
+            wrongLetter || status === 'VALID'
+              ? null
+              : typeof item.suggestion === 'string'
+                ? item.suggestion
+                : null,
           model,
         });
       }
@@ -583,6 +627,15 @@ Deno.serve(async (req: Request) => {
     if (!completed) throw new Error('Validation lease was no longer active');
     return reply(200, { state: 'completed' });
   } catch (error) {
+    if (error instanceof GeoapifyProviderError) {
+      console.error('Geographic provider request failed', {
+        provider: 'geoapify',
+        status: error.status,
+        normalizedQuery: error.normalizedQuery,
+        responseBody: error.responseBody,
+        durationMs: error.durationMs,
+      });
+    }
     console.error('Validation worker failed', {
       roomId,
       roundId,
