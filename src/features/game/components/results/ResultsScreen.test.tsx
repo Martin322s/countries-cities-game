@@ -1,4 +1,4 @@
-import { act, screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -280,13 +280,24 @@ describe('ResultsScreen final results', () => {
     const stoyan = await screen.findByRole('row', { name: /^Стоян/ });
     const mapButton = within(stoyan).getByRole('button', { name: /Покажи Малта на картата/ });
     expect(mapButton).toBeInTheDocument();
-    expect(within(stoyan).queryByRole('button', { name: /Покажи Мечка на картата/ })).not.toBeInTheDocument();
+    expect(
+      within(stoyan).queryByRole('button', { name: /Покажи Мечка на картата/ }),
+    ).not.toBeInTheDocument();
 
     await user.click(mapButton);
     const dialog = await screen.findByRole('dialog', { name: 'Малта' });
     const iframe = within(dialog).getByTitle('Google Maps for Малта');
     expect(iframe).toHaveAttribute('src', expect.stringContaining('key=test-google-key'));
-    expect(iframe).toHaveAttribute('src', expect.stringContaining('q=%D0%9C%D0%B0%D0%BB%D1%82%D0%B0%20%D0%94%D1%8A%D1%80%D0%B6%D0%B0%D0%B2%D0%B0'));
+    expect(iframe).toHaveAttribute(
+      'src',
+      expect.stringContaining(
+        'q=%D0%9C%D0%B0%D0%BB%D1%82%D0%B0%20%D0%94%D1%8A%D1%80%D0%B6%D0%B0%D0%B2%D0%B0',
+      ),
+    );
+    expect(iframe).not.toHaveClass('hidden');
+    expect(within(dialog).getByText('Зареждане на картата...')).toBeInTheDocument();
+    fireEvent.load(iframe);
+    expect(within(dialog).queryByText('Зареждане на картата...')).not.toBeInTheDocument();
     await user.click(within(dialog).getAllByRole('button', { name: 'Затвори' })[0]!);
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   });
@@ -295,14 +306,18 @@ describe('ResultsScreen final results', () => {
     vi.stubEnv('VITE_GOOGLE_MAPS_EMBED_KEY', '');
     renderResults(DESI);
     const stoyan = await screen.findByRole('row', { name: /^Стоян/ });
-    expect(within(stoyan).queryByRole('button', { name: /Покажи Малта на картата/ })).not.toBeInTheDocument();
+    expect(
+      within(stoyan).queryByRole('button', { name: /Покажи Малта на картата/ }),
+    ).not.toBeInTheDocument();
   });
 
   it('lets non-hosts read explanations without changing answers', async () => {
     const user = userEvent.setup();
     renderResults(DESI);
     await screen.findByRole('row', { name: /^Стоян/ });
-    expect(within(table()).getByRole('button', { name: /Стоян, Животно: Мечка/ })).toBeInTheDocument();
+    expect(
+      within(table()).getByRole('button', { name: /Стоян, Животно: Мечка/ }),
+    ).toBeInTheDocument();
     await user.click(within(table()).getByRole('button', { name: /Стоян, Животно: Мечка/ }));
     const dialog = screen.getByRole('dialog', { name: 'Стоян · Животно' });
     expect(within(dialog).getByRole('region', { name: 'Причина за анулиране' })).toHaveTextContent(
@@ -431,7 +446,9 @@ describe('ResultsScreen history', () => {
     await user.click(screen.getByRole('button', { name: 'Предишен рунд' }));
     expect(await screen.findByRole('heading', { name: 'ПРЕДИШЕН РУНД' })).toBeInTheDocument();
     expect(screen.getByText(/само за преглед/)).toBeInTheDocument();
-    expect(within(screen.getByRole('table')).getByRole('button', { name: /Стоян, Животно: Мечка/ })).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('table')).getByRole('button', { name: /Стоян, Животно: Мечка/ }),
+    ).toBeInTheDocument();
     await user.click(
       within(screen.getByRole('table')).getByRole('button', { name: /Стоян, Животно: Мечка/ }),
     );

@@ -139,7 +139,7 @@ export function ResultCellView({
       onClick={() => setMapOpen(true)}
       title="Покажи на картата"
       aria-label={`Покажи ${cell.answer} на картата`}
-      className="grid size-6 shrink-0 place-items-center rounded-md border border-white/10 bg-white/[0.04] text-fg-subtle transition hover:border-brand-400/60 hover:bg-brand-500/10 hover:text-brand-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-400/60"
+      className="hover:text-brand-200 grid size-6 shrink-0 place-items-center rounded-md border border-white/10 bg-white/[0.04] text-fg-subtle transition hover:border-brand-400/60 hover:bg-brand-500/10 focus-visible:ring-2 focus-visible:ring-brand-400/60 focus-visible:outline-none"
     >
       <MapPinIcon width={14} height={14} />
     </button>
@@ -192,7 +192,10 @@ export function ResultCellView({
         onClick={onSelect}
         title={duplicateHint}
         aria-label={`${playerName}, ${category}: ${cell.state === 'empty' ? 'празен' : cell.answer} — ${CELL_STATE_LABELS[cell.state]}. ${canEdit ? 'Промени валидността' : 'Виж причината за анулиране'}`}
-        className={cn('flex min-w-0 flex-1 items-center gap-2 text-left', 'cursor-pointer transition hover:brightness-125')}
+        className={cn(
+          'flex min-w-0 flex-1 items-center gap-2 text-left',
+          'cursor-pointer transition hover:brightness-125',
+        )}
         style={style}
       >
         {content}
@@ -217,21 +220,21 @@ export function ResultCellView({
           description={CATEGORY_LABELS[cell.category]}
         >
           <div className="space-y-4">
-            <div className="overflow-hidden rounded-xl border border-white/10 bg-black/20">
+            <div className="relative h-[320px] overflow-hidden rounded-xl border border-white/10 bg-black/20">
               {!mapLoaded && !mapError ? (
-                <div className="flex h-[320px] items-center justify-center text-sm text-fg-muted">
+                <div className="absolute inset-0 z-10 flex items-center justify-center text-sm text-fg-muted">
                   Зареждане на картата...
                 </div>
               ) : null}
               {mapError ? (
-                <div className="flex h-[320px] items-center justify-center px-4 text-center text-sm text-fg-muted">
+                <div className="absolute inset-0 z-10 flex items-center justify-center px-4 text-center text-sm text-fg-muted">
                   Картата не може да бъде заредена.
                 </div>
               ) : (
                 <iframe
                   title={`Google Maps for ${cell.answer}`}
                   src={`https://www.google.com/maps/embed/v1/place?key=${encodeURIComponent(googleMapsKey)}&q=${encodeURIComponent(mapQuery)}`}
-                  className={cn('block h-[320px] w-full border-0', !mapLoaded && 'hidden')}
+                  className="absolute inset-0 block h-full w-full border-0"
                   allowFullScreen
                   loading="lazy"
                   referrerPolicy="strict-origin-when-cross-origin"
@@ -245,7 +248,7 @@ export function ResultCellView({
                 href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(mapQuery)}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center rounded-full border border-brand-400/50 bg-brand-500/10 px-3 py-1.5 text-sm font-medium text-brand-200 transition hover:bg-brand-500/20"
+                className="text-brand-200 inline-flex items-center rounded-full border border-brand-400/50 bg-brand-500/10 px-3 py-1.5 text-sm font-medium transition hover:bg-brand-500/20"
               >
                 Отвори в Google Maps
               </a>
