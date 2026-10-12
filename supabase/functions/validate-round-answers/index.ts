@@ -438,18 +438,34 @@ Deno.serve(async (req: Request) => {
     .eq('player_id', auth.user.id)
     .is('left_at', null)
     .maybeSingle();
-  if (memberError) return reply(503, { error: 'Validation service unavailable' });
+  if (memberError) {
+    console.error('Validation membership lookup failed', {
+      code: memberError.code,
+      message: memberError.message,
+    });
+    return reply(503, { error: 'Validation service unavailable' });
+  }
   if (!member) return reply(403, { error: 'Not a room member' });
   const apiKey = Deno.env.get('OPENAI_API_KEY');
-  if (!apiKey) return reply(503, { error: 'Validation service unavailable' });
+  if (!apiKey) {
+    console.error('Validation service is missing OPENAI_API_KEY');
+    return reply(503, { error: 'Validation service unavailable' });
+  }
   const { data: rawJob, error: claimError } = await admin.rpc('claim_ai_validation', {
     p_room_id: roomId,
     p_round_id: roundId,
   });
-  if (claimError) return reply(503, { error: 'Validation service unavailable' });
+  if (claimError) {
+    console.error('Validation job claim failed', {
+      code: claimError.code,
+      message: claimError.message,
+    });
+    return reply(503, { error: 'Validation service unavailable' });
+  }
   if (!rawJob) return reply(202, { state: 'already_running_or_finished' });
   const job = rawJob as unknown as { claim: string; letter: string; answers: LockedAnswer[] };
   const model = Deno.env.get('OPENAI_MODEL') ?? 'gpt-4.1-mini';
+  let stage = 'prepare';
   try {
     const byIndex = new Map<number, { index: number; status: 'VALID' | 'INVALID'; reason: string | null; suggestion: string | null; model: string }>();
     const nonGeographicRows: Array<{ index: number; category: string; value: string }> = [];
@@ -460,6 +476,7 @@ Deno.serve(async (req: Request) => {
         continue;
       }
       if (GEOGRAPHIC_CATEGORIES.has(answer.category)) {
+        stage = 'geographic-validation';
         const decision = await validateGeographicAnswer(admin, answer.value, job.letter, answer.category);
         byIndex.set(index, { index, ...decision });
         continue;
@@ -468,6 +485,7 @@ Deno.serve(async (req: Request) => {
     }
 
     if (nonGeographicRows.length) {
+      stage = 'openai-validation';
       const response = await fetch('https://api.openai.com/v1/responses', {
         method: 'POST',
         signal: AbortSignal.timeout(45_000),
@@ -487,7 +505,7 @@ Deno.serve(async (req: Request) => {
           },
         }),
       });
-      if (!response.ok) throw new Error('Model request failed');
+      if (!response.ok) throw new Error(`Model request failed with status ${response.status}`);
       const parsed = JSON.parse(extractResponseText(await response.json())) as { results?: Array<Record<string, unknown>> };
       const expectedIndexes = new Set(nonGeographicRows.map((entry) => entry.index));
       const receivedIndexes = new Set<number>();
@@ -542,16 +560,36 @@ Deno.serve(async (req: Request) => {
         model: decision.model,
       };
     });
-    const { error } = await admin.rpc('complete_ai_validation', {
+    stage = 'publish-results';
+    const { data: completed, error } = await admin.rpc('complete_ai_validation', {
       p_room_id: roomId,
       p_round_id: roundId,
       p_claim: job.claim,
       p_results: results,
     });
     if (error) throw new Error('Could not publish validation');
+    if (!completed) throw new Error('Validation lease was no longer active');
     return reply(200, { state: 'completed' });
-  } catch {
-    await admin.rpc('release_ai_validation', { p_round_id: roundId, p_claim: job.claim });
+  } catch (error) {
+    console.error('Validation worker failed', {
+      roomId,
+      roundId,
+      stage,
+      error:
+        error instanceof Error
+          ? { name: error.name, message: error.message.slice(0, 300) }
+          : { name: 'UnknownError' },
+    });
+    const { error: releaseError } = await admin.rpc('release_ai_validation', {
+      p_round_id: roundId,
+      p_claim: job.claim,
+    });
+    if (releaseError) {
+      console.error('Validation lease release failed', {
+        code: releaseError.code,
+        message: releaseError.message,
+      });
+    }
     return reply(503, { error: 'Validation temporarily unavailable' });
   }
 });
