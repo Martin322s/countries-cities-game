@@ -14,7 +14,7 @@ afterEach(() => {
 
 describe('AI validation phase', () => {
   it('wakes the worker with identifiers only and has no answer or READY controls', async () => {
-    invoke.mockResolvedValue({ error: null });
+    invoke.mockResolvedValue({ data: { state: 'completed' }, error: null });
     const view = renderWithProviders(
       <AiValidationScreen roomId={'room' as RoomId} roundId={'round' as RoundId} />,
     );
@@ -26,6 +26,19 @@ describe('AI validation phase', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Проверяваме заключените отговори');
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    view.unmount();
+  });
+  it('does not repeatedly wake the worker when another worker already owns the validation', async () => {
+    invoke.mockResolvedValue({ data: { state: 'already_running_or_finished' }, error: null });
+    const view = renderWithProviders(
+      <AiValidationScreen roomId={'room' as RoomId} roundId={'round' as RoundId} />,
+    );
+    await vi.waitFor(() => expect(invoke).toHaveBeenCalledTimes(1));
+    vi.useFakeTimers();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(invoke).toHaveBeenCalledTimes(1);
     view.unmount();
   });
   it('shows a retry message on worker failure and stops retries after unmount', async () => {

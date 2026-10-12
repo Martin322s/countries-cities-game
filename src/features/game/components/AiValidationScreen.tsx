@@ -13,28 +13,43 @@ export function AiValidationScreen({ roomId, roundId }: { roomId: RoomId; roundI
 
   useEffect(() => {
     let disposed = false;
-    const isDisposed = () => disposed;
     let timer: number | undefined;
-    const run = async () => {
+    const schedule = (callback: () => void) => {
+      if (!disposed) timer = window.setTimeout(callback, 5_000);
+    };
+    const refreshUntilComplete = async () => {
+      await queryClient.invalidateQueries({ queryKey: roomKeys.game(roomId) });
+      schedule(() => void refreshUntilComplete());
+    };
+    const wakeWorker = async () => {
       try {
-        const result: { error: unknown } = await getSupabaseClient().functions.invoke(
+        const result = await getSupabaseClient().functions.invoke(
           'validate-round-answers',
           {
             body: { roomId, roundId },
           },
         );
         if (result.error) throw new Error('Validation request failed');
-        if (isDisposed()) return;
+        const state =
+          typeof result.data === 'object' && result.data !== null && 'state' in result.data
+            ? result.data.state
+            : null;
+        if (state !== 'completed' && state !== 'already_running_or_finished') {
+          throw new Error('Unexpected validation response');
+        }
+        if (disposed) return;
         setRetrying(false);
       } catch {
-        if (isDisposed()) return;
+        if (disposed) return;
         setRetrying(true);
+        await queryClient.invalidateQueries({ queryKey: roomKeys.game(roomId) });
+        schedule(() => void wakeWorker());
+        return;
       }
-      if (isDisposed()) return;
       await queryClient.invalidateQueries({ queryKey: roomKeys.game(roomId) });
-      if (!isDisposed()) timer = window.setTimeout(() => void run(), 5_000);
+      schedule(() => void refreshUntilComplete());
     };
-    void run();
+    void wakeWorker();
     return () => {
       disposed = true;
       window.clearTimeout(timer);
