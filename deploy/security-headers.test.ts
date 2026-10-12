@@ -9,6 +9,7 @@ describe('security headers', () => {
     const csp = contentSecurityPolicy(hosted);
     expect(csp).toContain("connect-src 'self' https://abcd.supabase.co wss://abcd.supabase.co");
     expect(csp).toContain("script-src 'self'");
+    expect(csp).toContain("frame-src https://www.google.com");
     expect(csp).toContain("frame-ancestors 'none'");
     expect(csp).toContain("object-src 'none'");
     expect(csp).not.toMatch(/unsafe-eval|googleapis|gstatic/);
@@ -17,8 +18,8 @@ describe('security headers', () => {
   it('opens only the CAPTCHA provider when one is configured', () => {
     const csp = contentSecurityPolicy({ ...hosted, captcha: 'turnstile' });
     expect(csp).toContain("script-src 'self' https://challenges.cloudflare.com");
-    expect(csp).toContain('frame-src https://challenges.cloudflare.com');
-    expect(contentSecurityPolicy(hosted)).toContain("frame-src 'none'");
+    expect(csp).toContain('frame-src https://challenges.cloudflare.com https://www.google.com');
+    expect(contentSecurityPolicy(hosted)).toContain('frame-src https://www.google.com');
   });
 
   it('sends HSTS only over HTTPS', () => {

@@ -19,11 +19,13 @@ const CAPTCHA_ORIGINS: Record<'turnstile' | 'hcaptcha', string[]> = {
   turnstile: ['https://challenges.cloudflare.com'],
   hcaptcha: ['https://hcaptcha.com', 'https://*.hcaptcha.com'],
 };
+const GOOGLE_MAPS_EMBED_ORIGINS = ['https://www.google.com'];
 
 export function contentSecurityPolicy({ supabaseUrl, captcha }: HeaderOptions): string {
   const api = new URL(supabaseUrl);
   const ws = `${api.protocol === 'https:' ? 'wss:' : 'ws:'}//${api.host}`;
   const captchaOrigins = captcha ? CAPTCHA_ORIGINS[captcha] : [];
+  const frameOrigins = [...captchaOrigins, ...GOOGLE_MAPS_EMBED_ORIGINS];
   const directives: Record<string, string[]> = {
     'default-src': ["'self'"],
     'script-src': ["'self'", ...captchaOrigins],
@@ -34,7 +36,7 @@ export function contentSecurityPolicy({ supabaseUrl, captcha }: HeaderOptions): 
     'font-src': ["'self'"],
     // Supabase REST/Auth (https) and Realtime (wss) — nothing else.
     'connect-src': ["'self'", api.origin, ws, ...(captcha === 'hcaptcha' ? captchaOrigins : [])],
-    'frame-src': captchaOrigins.length ? captchaOrigins : ["'none'"],
+    'frame-src': frameOrigins.length ? frameOrigins : ["'none'"],
     'worker-src': ["'none'"],
     'object-src': ["'none'"],
     'base-uri': ["'self'"],
