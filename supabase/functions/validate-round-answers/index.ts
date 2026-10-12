@@ -255,11 +255,18 @@ type GeographicValidationResult = {
   model: string;
 };
 
+interface GeographicCacheEntry {
+  result: Record<string, unknown>;
+  validatedAt: string | null;
+}
+
+const NEGATIVE_GEOGRAPHIC_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
 async function fetchCachedGeographicResult(
   admin: SupabaseClient<Database>,
   name: string,
   category: string,
-) {
+): Promise<GeographicCacheEntry | undefined> {
   try {
     const cache = admin.from('geographic_validation_cache' as never) as any;
     const { data, error } = await cache
@@ -271,9 +278,13 @@ async function fetchCachedGeographicResult(
       console.warn('Geoapify cache read failed', { code: error.code, message: error.message });
       return undefined;
     }
-    const row = data as { result?: unknown } | null;
-    if (row && typeof row.result === 'object' && row.result !== null)
-      return row.result as Record<string, unknown>;
+    const row = data as { result?: unknown; validated_at?: unknown } | null;
+    if (row && typeof row.result === 'object' && row.result !== null) {
+      return {
+        result: row.result as Record<string, unknown>,
+        validatedAt: typeof row.validated_at === 'string' ? row.validated_at : null,
+      };
+    }
   } catch (error) {
     console.warn('Geoapify cache read failed', {
       message: error instanceof Error ? error.message.slice(0, 200) : 'Unknown cache error',
@@ -333,8 +344,13 @@ async function validateGeographicAnswer(
     return { status: 'INVALID', reason: 'WRONG_LETTER', suggestion: null, model: 'geoapify' };
   }
   const cached = await fetchCachedGeographicResult(admin, answer, category);
-  if (cached?.model === 'geoapify') {
-    const status = cached.status === 'VALID' ? 'VALID' : 'INVALID';
+  const negativeCacheTimestamp = cached?.validatedAt ? Date.parse(cached.validatedAt) : NaN;
+  const negativeCacheExpired =
+    cached?.result.status === 'INVALID' &&
+    (!Number.isFinite(negativeCacheTimestamp) ||
+      Date.now() - negativeCacheTimestamp >= NEGATIVE_GEOGRAPHIC_CACHE_TTL_MS);
+  if (cached?.result.model === 'geoapify' && !negativeCacheExpired) {
+    const status = cached.result.status === 'VALID' ? 'VALID' : 'INVALID';
     const validReason = new Set([
       'WRONG_LETTER',
       'MISSPELLING',
@@ -343,11 +359,13 @@ async function validateGeographicAnswer(
       'AMBIGUOUS',
     ]);
     const reason =
-      typeof cached.reason === 'string' && validReason.has(cached.reason) ? cached.reason : null;
+      typeof cached.result.reason === 'string' && validReason.has(cached.result.reason)
+        ? cached.result.reason
+        : null;
     return {
       status,
       reason: status === 'VALID' ? null : (reason ?? 'AMBIGUOUS'),
-      suggestion: typeof cached.suggestion === 'string' ? cached.suggestion : null,
+      suggestion: typeof cached.result.suggestion === 'string' ? cached.result.suggestion : null,
       model: 'geoapify',
     };
   }

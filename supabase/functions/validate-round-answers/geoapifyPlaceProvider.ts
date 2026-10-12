@@ -39,7 +39,13 @@ function placeNameVariants(source: Record<string, unknown> | undefined): string[
 function placeType(properties: Record<string, unknown>): 'city' | 'village' | 'unknown' {
   const datasource = isRecord(properties.datasource) ? properties.datasource : undefined;
   const raw = datasource && isRecord(datasource.raw) ? datasource.raw : undefined;
-  const rawPlace = typeof raw?.place === 'string' ? raw.place.toLowerCase() : null;
+  const rawPlaceValue =
+    typeof raw?.place === 'string'
+      ? raw.place
+      : typeof properties.place === 'string'
+        ? properties.place
+        : null;
+  const rawPlace = rawPlaceValue?.toLowerCase() ?? null;
   const resultType =
     typeof properties.result_type === 'string' ? properties.result_type.toLowerCase() : null;
   const type = rawPlace ?? resultType;

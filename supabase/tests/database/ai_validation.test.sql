@@ -55,6 +55,19 @@ select is(public.complete_ai_validation(pg_temp.room(), pg_temp.current_round(),
 select is(pg_temp.phase(), 'REVEAL', 'completion starts synchronized reveal');
 select is((select points from public.round_cells(pg_temp.current_round())
   where player_id = '00000000-0000-0000-0000-0000000000a1' and category = 'city'), 0, 'AI invalid answer scores zero');
+select pg_temp.as_user('00000000-0000-0000-0000-0000000000a1');
+select public.set_answer_invalidated(pg_temp.room(), pg_temp.current_round(),
+  '00000000-0000-0000-0000-0000000000a1', 'city', false);
+select pg_temp.as_admin();
+select is((select validation_status::text from public.answers
+  where round_id = pg_temp.current_round() and category = 'city'), 'VALID',
+  'host restore overrides an AI-invalid decision');
+select is((select validation_reason::text from public.answers
+  where round_id = pg_temp.current_round() and category = 'city'), null::text,
+  'host restore clears the AI rejection reason');
+select is((select points from public.round_cells(pg_temp.current_round())
+  where player_id = '00000000-0000-0000-0000-0000000000a1' and category = 'city'), 1,
+  'restored AI-invalid answer scores normally');
 select is((select points from public.round_cells(pg_temp.current_round())
   where player_id = '00000000-0000-0000-0000-0000000000a1' and category = 'country'), 1, 'verified unique answer scores normally');
 select is((select count(*) from public.round_validations), 2::bigint, 'audit rows use authoritative answers');

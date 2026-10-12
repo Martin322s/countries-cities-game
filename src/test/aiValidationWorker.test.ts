@@ -13,6 +13,8 @@ const { auth, membership, rpc, serve, env, fetchMock, cacheLookup, cacheUpsert }
     serve: vi.fn<(handler: (request: Request) => Response | Promise<Response>) => void>(),
   }),
 );
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
 vi.mock('@supabase/supabase-js', () => ({
   createClient: () => ({
     auth: { getUser: auth },
@@ -53,7 +55,7 @@ const geoapifyFeature = (
   country_code,
   datasource: { raw: { name, place, ...nameVariants } },
 });
-const setGeoAnswers = (answers: Array<{ category: string; value: string }>, letter = 'В') => {
+const setGeoAnswers = (answers: { category: string; value: string }[], letter = 'В') => {
   rpc
     .mockReset()
     .mockResolvedValueOnce({
@@ -71,12 +73,25 @@ const completedResults = async () => {
   expect(response.status).toBe(200);
   const completion = rpc.mock.calls.find(([name]) => name === 'complete_ai_validation');
   if (!completion) throw new Error('Validation did not complete');
-  const results = completion[1].p_results as Array<{
-    status: string;
-    reason: string | null;
-    model: string;
-  }>;
-  return results.map(({ status, reason, model }) => ({ status, reason, model }));
+  const completionArgs: unknown = completion[1];
+  if (!isRecord(completionArgs) || !Array.isArray(completionArgs.p_results)) {
+    throw new Error('Validation results were not published');
+  }
+  return completionArgs.p_results.map((value) => {
+    if (
+      !isRecord(value) ||
+      typeof value.status !== 'string' ||
+      (value.reason !== null && typeof value.reason !== 'string') ||
+      typeof value.model !== 'string'
+    ) {
+      throw new Error('Validation published a malformed result');
+    }
+    return {
+      status: value.status,
+      reason: value.reason,
+      model: value.model,
+    };
+  });
 };
 const modelResponse = (index = 0) =>
   new Response(
@@ -290,6 +305,26 @@ describe('trusted AI worker', () => {
       { status: 'INVALID', reason: 'WRONG_CATEGORY', model: 'geoapify' },
     ]);
   });
+  it('recognizes a Geoapify city-level result with an OSM hamlet settlement tag as a village', async () => {
+    setGeoAnswers([{ category: 'village', value: 'Челюстница' }], 'Ч');
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          results: [
+            {
+              name: 'Челюстница',
+              result_type: 'city',
+              datasource: { raw: { name: 'Челюстница', place: 'hamlet' } },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+    expect(await completedResults()).toEqual([
+      { status: 'VALID', reason: null, model: 'geoapify' },
+    ]);
+  });
   it('accepts an exact same-name place of the requested type among locations in different countries', async () => {
     setGeoAnswers([{ category: 'city', value: 'Баня' }], 'Б');
     fetchMock.mockResolvedValueOnce(
@@ -353,13 +388,40 @@ describe('trusted AI worker', () => {
   it('uses a Geoapify cache hit without making a provider request', async () => {
     setGeoAnswers([{ category: 'city', value: 'Варна' }]);
     cacheLookup.mockResolvedValueOnce({
-      data: { result: { status: 'VALID', reason: null, suggestion: null, model: 'geoapify' } },
+      data: {
+        result: { status: 'VALID', reason: null, suggestion: null, model: 'geoapify' },
+        validated_at: new Date().toISOString(),
+      },
       error: null,
     });
     expect(await completedResults()).toEqual([
       { status: 'VALID', reason: null, model: 'geoapify' },
     ]);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it('refreshes an expired negative Geoapify cache result', async () => {
+    setGeoAnswers([{ category: 'village', value: 'Челюстница' }], 'Ч');
+    cacheLookup.mockResolvedValueOnce({
+      data: {
+        result: {
+          status: 'INVALID',
+          reason: 'DOES_NOT_EXIST',
+          suggestion: null,
+          model: 'geoapify',
+        },
+        validated_at: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
+      },
+      error: null,
+    });
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ results: [geoapifyFeature('Челюстница', 'hamlet')] }), {
+        status: 200,
+      }),
+    );
+    expect(await completedResults()).toEqual([
+      { status: 'VALID', reason: null, model: 'geoapify' },
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
   it('looks up an identical answer only once per round', async () => {
     setGeoAnswers([

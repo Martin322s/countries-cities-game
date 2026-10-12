@@ -92,9 +92,14 @@ export function ResultCellView({
   const [mapError, setMapError] = useState(false);
 
   useEffect(() => {
-    setMapLoaded(false);
-    setMapError(false);
-  }, [mapOpen]);
+    if (!mapOpen || mapLoaded || mapError) return;
+    const timeoutId = window.setTimeout(() => {
+      setMapError(true);
+    }, 15_000);
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [mapOpen, mapLoaded, mapError]);
 
   if (lastState !== cell.state) {
     setLastState(cell.state);
@@ -136,7 +141,11 @@ export function ResultCellView({
   const mapButton = showMapsButton ? (
     <button
       type="button"
-      onClick={() => setMapOpen(true)}
+      onClick={() => {
+        setMapLoaded(false);
+        setMapError(false);
+        setMapOpen(true);
+      }}
       title="Покажи на картата"
       aria-label={`Покажи ${cell.answer} на картата`}
       className="hover:text-brand-200 grid size-6 shrink-0 place-items-center rounded-md border border-white/10 bg-white/[0.04] text-fg-subtle transition hover:border-brand-400/60 hover:bg-brand-500/10 focus-visible:ring-2 focus-visible:ring-brand-400/60 focus-visible:outline-none"
@@ -215,7 +224,9 @@ export function ResultCellView({
       {showMapsButton && mapOpen ? (
         <Dialog
           open={mapOpen}
-          onClose={() => setMapOpen(false)}
+          onClose={() => {
+            setMapOpen(false);
+          }}
           title={cell.answer}
           description={CATEGORY_LABELS[cell.category]}
         >
@@ -228,7 +239,7 @@ export function ResultCellView({
               ) : null}
               {mapError ? (
                 <div className="absolute inset-0 z-10 flex items-center justify-center px-4 text-center text-sm text-fg-muted">
-                  Картата не може да бъде заредена.
+                  Картата не се зареди. Отвори я чрез бутона отдолу.
                 </div>
               ) : (
                 <iframe
@@ -236,10 +247,14 @@ export function ResultCellView({
                   src={`https://www.google.com/maps/embed/v1/place?key=${encodeURIComponent(googleMapsKey)}&q=${encodeURIComponent(mapQuery)}`}
                   className="absolute inset-0 block h-full w-full border-0"
                   allowFullScreen
-                  loading="lazy"
+                  loading="eager"
                   referrerPolicy="strict-origin-when-cross-origin"
-                  onLoad={() => setMapLoaded(true)}
-                  onError={() => setMapError(true)}
+                  onLoad={() => {
+                    setMapLoaded(true);
+                  }}
+                  onError={() => {
+                    setMapError(true);
+                  }}
                 />
               )}
             </div>
@@ -254,7 +269,9 @@ export function ResultCellView({
               </a>
               <button
                 type="button"
-                onClick={() => setMapOpen(false)}
+                onClick={() => {
+                  setMapOpen(false);
+                }}
                 className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-sm font-medium text-fg transition hover:bg-white/10"
               >
                 Затвори

@@ -296,6 +296,7 @@ describe('ResultsScreen final results', () => {
     );
     expect(iframe).not.toHaveClass('hidden');
     expect(within(dialog).getByText('Зареждане на картата...')).toBeInTheDocument();
+    expect(iframe).toHaveAttribute('loading', 'eager');
     fireEvent.load(iframe);
     expect(within(dialog).queryByText('Зареждане на картата...')).not.toBeInTheDocument();
     await user.click(within(dialog).getAllByRole('button', { name: 'Затвори' })[0]!);
@@ -309,6 +310,24 @@ describe('ResultsScreen final results', () => {
     expect(
       within(stoyan).queryByRole('button', { name: /Покажи Малта на картата/ }),
     ).not.toBeInTheDocument();
+  });
+
+  it('shows a fallback instead of an endless map loading indicator', async () => {
+    vi.stubEnv('VITE_GOOGLE_MAPS_EMBED_KEY', 'test-google-key');
+    renderResults(DESI);
+    const stoyan = await screen.findByRole('row', { name: /^Стоян/ });
+    vi.useFakeTimers();
+    fireEvent.click(within(stoyan).getByRole('button', { name: /Покажи Малта на картата/ }));
+    const dialog = screen.getByRole('dialog', { name: 'Малта' });
+
+    act(() => {
+      vi.advanceTimersByTime(15_000);
+    });
+
+    expect(
+      within(dialog).getByText('Картата не се зареди. Отвори я чрез бутона отдолу.'),
+    ).toBeInTheDocument();
+    vi.useRealTimers();
   });
 
   it('lets non-hosts read explanations without changing answers', async () => {
