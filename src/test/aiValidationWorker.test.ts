@@ -219,6 +219,13 @@ describe('trusted AI worker', () => {
       ],
     });
   });
+  it('validates Унгария as a country starting with У', async () => {
+    setGeoAnswers([{ category: 'country', value: 'Унгария' }], 'У');
+
+    const results = await completedResults();
+    expect(results).toEqual([{ status: 'VALID', reason: null, model: 'country-database' }]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
   it('queries Geoapify for city answers and accepts an exact Bulgarian name', async () => {
     setGeoAnswers([{ category: 'city', value: 'Варна' }]);
     fetchMock.mockResolvedValueOnce(

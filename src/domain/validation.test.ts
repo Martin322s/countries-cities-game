@@ -21,4 +21,11 @@ describe('AI answer validation helpers', () => {
       status: 'VALID',
     });
   });
+
+  it('accepts Hungary as a country starting with У', () => {
+    expect(buildValidationDecision('Унгария', 'У', 'country')).toMatchObject({
+      status: 'VALID',
+      reason: null,
+    });
+  });
 });
