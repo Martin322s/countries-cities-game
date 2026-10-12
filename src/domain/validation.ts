@@ -217,21 +217,22 @@ const COUNTRY_SET = new Set<string>([
 
 function levenshtein(left: string, right: string): number {
   const distances = Array.from({ length: left.length + 1 }, () => new Array<number>(right.length + 1).fill(0));
-  for (let i = 0; i <= left.length; i++) distances[i][0] = i;
-  for (let j = 0; j <= right.length; j++) distances[0][j] = j;
+  for (let i = 0; i <= left.length; i++) distances[i]![0] = i;
+  for (let j = 0; j <= right.length; j++) distances[0]![j] = j;
 
   for (let i = 1; i <= left.length; i++) {
+    const previousRow = distances[i - 1]!;
+    const currentRow = distances[i]!;
     for (let j = 1; j <= right.length; j++) {
       const cost = left[i - 1] === right[j - 1] ? 0 : 1;
-      distances[i][j] = Math.min(
-        distances[i - 1][j] + 1,
-        distances[i][j - 1] + 1,
-        distances[i - 1][j - 1] + cost,
-      );
+      const previousValue = previousRow[j] ?? 0;
+      const currentValue = currentRow[j - 1] ?? 0;
+      const diagonalValue = previousRow[j - 1] ?? 0;
+      currentRow[j] = Math.min(previousValue + 1, currentValue + 1, diagonalValue + cost);
     }
   }
 
-  return distances[left.length][right.length];
+  return distances[left.length]?.[right.length] ?? 0;
 }
 
 export function isCountryNameValid(value: string): boolean {

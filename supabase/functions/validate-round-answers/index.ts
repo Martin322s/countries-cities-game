@@ -1,11 +1,6 @@
-﻿﻿import { createClient } from '@supabase/supabase-js';
-import {
-  extractResponseText,
-  judgeInstructions,
-  parseDecisions,
-  resultSchema,
-  type LockedAnswer,
-} from './protocol.ts';
+﻿﻿import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import type { Database } from '../../../src/shared/lib/database.types';
+import { extractResponseText, judgeInstructions, resultSchema, type LockedAnswer } from './protocol.ts';
 
 const headers = {
   'Content-Type': 'application/json',
@@ -201,22 +196,23 @@ const normalize = (value: string) =>
 
 function levenshtein(left: string, right: string): number {
   const distances = Array.from({ length: left.length + 1 }, () => new Array<number>(right.length + 1).fill(0));
-  for (let i = 0; i <= left.length; i++) distances[i][0] = i;
-  for (let j = 0; j <= right.length; j++) distances[0][j] = j;
+  for (let i = 0; i <= left.length; i++) distances[i]![0] = i;
+  for (let j = 0; j <= right.length; j++) distances[0]![j] = j;
   for (let i = 1; i <= left.length; i++) {
+    const previousRow = distances[i - 1]!;
+    const currentRow = distances[i]!;
     for (let j = 1; j <= right.length; j++) {
       const cost = left[i - 1] === right[j - 1] ? 0 : 1;
-      distances[i][j] = Math.min(
-        distances[i - 1][j] + 1,
-        distances[i][j - 1] + 1,
-        distances[i - 1][j - 1] + cost,
-      );
+      const previousValue = previousRow[j] ?? 0;
+      const currentValue = currentRow[j - 1] ?? 0;
+      const diagonalValue = previousRow[j - 1] ?? 0;
+      currentRow[j] = Math.min(previousValue + 1, currentValue + 1, diagonalValue + cost);
     }
   }
-  return distances[left.length][right.length];
+  return distances[left.length]?.[right.length] ?? 0;
 }
 
-function validateCountryDecision(answer: string, letter: string) {
+function validateCountryDecision(answer: string, letter: string): { status: 'VALID' | 'INVALID'; reason: string | null; suggestion: string | null } {
   const normalized = normalize(answer);
   const letterNormalized = normalize(letter);
   if (!normalized) return { status: 'INVALID', reason: 'DOES_NOT_EXIST', suggestion: null };
@@ -262,19 +258,23 @@ function exactNameMatch(answer: string, result: Record<string, unknown>): boolea
   return names.includes(normalizedAnswer);
 }
 
-async function fetchCachedGeographicResult(
-  admin: ReturnType<typeof createClient>,
-  name: string,
-  category: string,
-) {
+type GeographicValidationResult = {
+  status: 'VALID' | 'INVALID';
+  reason: string | null;
+  suggestion: string | null;
+  model: string;
+};
+
+async function fetchCachedGeographicResult(admin: SupabaseClient<Database>, name: string, category: string) {
   try {
-    const { data, error } = await admin
-      .from('geographic_validation_cache')
+    const cache = admin.from('geographic_validation_cache' as never) as any;
+    const { data, error } = await cache
       .select('*')
       .eq('normalized_name', normalize(name))
       .eq('requested_category', category)
       .maybeSingle();
-    if (!error && data && typeof data.result === 'object' && data.result !== null) return data.result as Record<string, unknown>;
+    const row = data as { result?: unknown } | null;
+    if (!error && row && typeof row.result === 'object' && row.result !== null) return row.result as Record<string, unknown>;
   } catch {
     // Ignore cache errors and fall back to a fresh provider lookup.
   }
@@ -282,7 +282,7 @@ async function fetchCachedGeographicResult(
 }
 
 async function storeCachedGeographicResult(
-  admin: ReturnType<typeof createClient>,
+  admin: SupabaseClient<Database>,
   name: string,
   category: string,
   decision: Record<string, unknown>,
@@ -293,7 +293,8 @@ async function storeCachedGeographicResult(
   rawMetadata?: Record<string, unknown>,
 ) {
   try {
-    await admin.from('geographic_validation_cache').upsert(
+    const cache = admin.from('geographic_validation_cache' as never) as any;
+    await cache.upsert(
       {
         normalized_name: normalize(name),
         requested_category: category,
@@ -313,11 +314,11 @@ async function storeCachedGeographicResult(
 }
 
 async function validateGeographicAnswer(
-  admin: ReturnType<typeof createClient>,
+  admin: SupabaseClient<Database>,
   answer: string,
   letter: string,
   category: string,
-): Promise<{ status: 'VALID' | 'INVALID'; reason: string | null; suggestion: string | null; model: string }> {
+): Promise<GeographicValidationResult> {
   const normalized = normalize(answer);
   const letterNormalized = normalize(letter);
   if (!normalized) {
@@ -363,16 +364,20 @@ async function validateGeographicAnswer(
   const payload = (await response.json()) as Record<string, unknown>[];
   const exactMatches = payload.filter((entry) => exactNameMatch(answer, entry));
   if (!exactMatches.length) {
-    const decision = { status: 'INVALID', reason: 'DOES_NOT_EXIST', suggestion: null };
+    const decision: GeographicValidationResult = { status: 'INVALID', reason: 'DOES_NOT_EXIST', suggestion: null, model: 'nominatim' };
     await storeCachedGeographicResult(admin, answer, category, decision);
-    return { ...decision, model: 'nominatim' };
+    return decision;
   }
 
   const acceptedTypes = category === 'city' ? ['city', 'town'] : ['village'];
   const accepted = exactMatches.filter((entry) => acceptedTypes.includes(getPlaceType(String(entry.type ?? 'unknown'))));
   if (accepted.length) {
-    const decision = { status: 'VALID', reason: null, suggestion: null };
     const match = accepted[0];
+    if (!match) {
+      const decision: GeographicValidationResult = { status: 'INVALID', reason: 'DOES_NOT_EXIST', suggestion: null, model: 'nominatim' };
+      return decision;
+    }
+    const decision: GeographicValidationResult = { status: 'VALID', reason: null, suggestion: null, model: 'nominatim' };
     await storeCachedGeographicResult(
       admin,
       answer,
@@ -386,12 +391,12 @@ async function validateGeographicAnswer(
         : undefined,
       match,
     );
-    return { ...decision, model: 'nominatim' };
+    return decision;
   }
 
-  const decision = { status: 'INVALID', reason: 'WRONG_CATEGORY', suggestion: null };
+  const decision: GeographicValidationResult = { status: 'INVALID', reason: 'WRONG_CATEGORY', suggestion: null, model: 'nominatim' };
   await storeCachedGeographicResult(admin, answer, category, decision);
-  return { ...decision, model: 'nominatim' };
+  return decision;
 }
 
 Deno.serve(async (req: Request) => {
@@ -403,7 +408,7 @@ Deno.serve(async (req: Request) => {
   const projectUrl = Deno.env.get('SUPABASE_URL');
   const serviceRole = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   if (!projectUrl || !serviceRole) return reply(503, { error: 'Validation service unavailable' });
-  const admin = createClient(projectUrl, serviceRole, {
+  const admin = createClient<Database>(projectUrl, serviceRole, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
   const { data: auth, error: authError } = await admin.auth.getUser(authorization.slice(7));
@@ -443,7 +448,7 @@ Deno.serve(async (req: Request) => {
   });
   if (claimError) return reply(503, { error: 'Validation service unavailable' });
   if (!rawJob) return reply(202, { state: 'already_running_or_finished' });
-  const job = rawJob as { claim: string; letter: string; answers: LockedAnswer[] };
+  const job = rawJob as unknown as { claim: string; letter: string; answers: LockedAnswer[] };
   const model = Deno.env.get('OPENAI_MODEL') ?? 'gpt-4.1-mini';
   try {
     const byIndex = new Map<number, { index: number; status: 'VALID' | 'INVALID'; reason: string | null; suggestion: string | null; model: string }>();
