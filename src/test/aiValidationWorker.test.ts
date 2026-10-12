@@ -76,7 +76,7 @@ beforeEach(() => {
       data: {
         claim,
         letter: 'М',
-        answers: [{ player_id: playerId, category: 'country', value: 'Малта' }],
+        answers: [{ player_id: playerId, category: 'animal', value: 'Мечка' }],
       },
       error: null,
     })
@@ -107,7 +107,7 @@ describe('trusted AI worker', () => {
       p_results: [
         {
           player_id: playerId,
-          category: 'country',
+          category: 'animal',
           status: 'VALID',
           reason: null,
           suggestion: null,
@@ -117,10 +117,29 @@ describe('trusted AI worker', () => {
     });
     const options = fetchMock.mock.calls[0]![1] as RequestInit;
     if (typeof options.body !== 'string') throw new Error('Expected a JSON request');
-    expect(options.body).toContain('Малта');
+    expect(options.body).toContain('Мечка');
     expect(options.body).not.toContain('Forged');
     expect(options.body).toContain('"strict":true');
     expect(await response.json()).toEqual({ state: 'completed' });
+  });
+  it('skips the model for country, city and village answers', async () => {
+    rpc.mockReset().mockResolvedValueOnce({
+      data: {
+        claim,
+        letter: 'Я',
+        answers: [{ player_id: playerId, category: 'country', value: 'Ямайка' }],
+      },
+      error: null,
+    }).mockResolvedValue({ data: true, error: null });
+    const response = await handler(request());
+    expect(response.status).toBe(200);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledWith('complete_ai_validation', {
+      p_room_id: roomId,
+      p_round_id: roundId,
+      p_claim: claim,
+      p_results: [{ player_id: playerId, category: 'country', status: 'VALID', reason: null, suggestion: null, model: 'country-database' }],
+    });
   });
   it('does not call the model when another worker already claimed the job', async () => {
     rpc.mockReset().mockResolvedValue({ data: null, error: null });
@@ -128,6 +147,14 @@ describe('trusted AI worker', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
   it('releases a failed lease and never publishes forged or incomplete model decisions', async () => {
+    rpc.mockReset().mockResolvedValueOnce({
+      data: {
+        claim,
+        letter: 'М',
+        answers: [{ player_id: playerId, category: 'animal', value: 'Мечка' }],
+      },
+      error: null,
+    }).mockResolvedValue({ data: true, error: null });
     fetchMock.mockResolvedValueOnce(modelResponse(999));
     const response = await handler(request());
     expect(response.status).toBe(503);
