@@ -318,6 +318,15 @@ async function storeCachedGeographicResult(
   }
 }
 
+async function waitForGeographicLookupSlot(admin: SupabaseClient<Database>) {
+  const { data: waitMs, error } = await admin.rpc('reserve_geographic_lookup_slot');
+  if (error) throw new Error(`Could not reserve Nominatim request slot: ${error.message}`);
+  if (typeof waitMs !== 'number' || !Number.isFinite(waitMs) || waitMs < 0) {
+    throw new Error('Invalid Nominatim request slot');
+  }
+  if (waitMs > 0) await new Promise<void>((resolve) => setTimeout(resolve, waitMs));
+}
+
 async function validateGeographicAnswer(
   admin: SupabaseClient<Database>,
   answer: string,
@@ -354,12 +363,14 @@ async function validateGeographicAnswer(
   url.searchParams.set('limit', '10');
   url.searchParams.set('q', answer);
 
+  await waitForGeographicLookupSlot(admin);
   const response = await fetch(url, {
     headers: NOMINATIM_HEADERS,
     signal: AbortSignal.timeout(10_000),
   });
   if (!response.ok) {
-    throw new Error(`Nominatim lookup failed: ${response.status}`);
+    const details = (await response.text()).replace(/\s+/g, ' ').slice(0, 300);
+    throw new Error(`Nominatim lookup failed: ${response.status}${details ? ` — ${details}` : ''}`);
   }
 
   const payload = (await response.json()) as Record<string, unknown>[];

@@ -152,14 +152,18 @@ describe('trusted AI worker', () => {
     });
   });
   it('identifies the application to Nominatim with its real production origin', async () => {
-    rpc.mockReset().mockResolvedValueOnce({
-      data: {
-        claim,
-        letter: 'В',
-        answers: [{ player_id: playerId, category: 'city', value: 'Варна' }],
-      },
-      error: null,
-    }).mockResolvedValue({ data: true, error: null });
+    rpc
+      .mockReset()
+      .mockResolvedValueOnce({
+        data: {
+          claim,
+          letter: 'В',
+          answers: [{ player_id: playerId, category: 'city', value: 'Варна' }],
+        },
+        error: null,
+      })
+      .mockResolvedValueOnce({ data: 0, error: null })
+      .mockResolvedValue({ data: true, error: null });
     fetchMock.mockResolvedValueOnce(new Response('[]', { status: 200 }));
 
     const response = await handler(request());
@@ -172,6 +176,7 @@ describe('trusted AI worker', () => {
     );
     expect(new Headers(options.headers).get('referer')).toBe('https://countries-cities.netlify.app/');
     expect(String(url)).toContain('q=%D0%92%D0%B0%D1%80%D0%BD%D0%B0');
+    expect(rpc).toHaveBeenCalledWith('reserve_geographic_lookup_slot');
     expect(cacheUpsert).toHaveBeenCalled();
   });
   it('does not call the model when another worker already claimed the job', async () => {

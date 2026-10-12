@@ -220,6 +220,7 @@ isOneToOne: false
 claim_ai_validation: { Args: { p_room_id: string; p_round_id: string }; Returns: Json },
 release_ai_validation: { Args: { p_round_id: string; p_claim: string }; Returns: undefined },
 complete_ai_validation: { Args: { p_room_id: string; p_round_id: string; p_claim: string; p_results: Json }; Returns: boolean },
+reserve_geographic_lookup_slot: { Args: Record<PropertyKey, never>; Returns: number },
 set_ai_validation_pending: { Args: { p_room_id: string }; Returns: undefined },
             "advance_game":
 { Args: { "p_room_id": string }; Returns: undefined
