@@ -32,7 +32,6 @@ export interface ResultCell {
   validationReason?: ValidationReason | null;
   validationSuggestion?: string | null;
   hostInvalidated?: boolean;
-  validationTimedOut?: boolean;
 }
 
 export interface PlayerResult {
@@ -109,7 +108,7 @@ function parseCell(value: unknown): ResultCell {
   const suggestion = value.validation_suggestion ?? null;
   if (suggestion !== null && typeof suggestion !== 'string')
     return malformed('cell.validation_suggestion');
-  for (const field of ['host_invalidated', 'validation_timed_out']) {
+  for (const field of ['host_invalidated']) {
     if (value[field] !== undefined && typeof value[field] !== 'boolean')
       return malformed(`cell.${field}`);
   }
@@ -122,7 +121,6 @@ function parseCell(value: unknown): ResultCell {
     validationReason: reason as ValidationReason | null,
     validationSuggestion: suggestion,
     hostInvalidated: value.host_invalidated === true,
-    validationTimedOut: value.validation_timed_out === true,
   };
 }
 

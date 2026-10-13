@@ -83,13 +83,13 @@ export async function gameState(player: Player, roomId: string): Promise<GameSta
 /** TEST ONLY: deterministically finish the real worker transaction, without paid API calls. */
 export async function finishValidation(roomId: string, roundId: string): Promise<void> {
   const admin = await localAdmin();
-  const { data, error } = await admin.rpc('claim_ai_validation', {
+  const { data, error } = await admin.rpc('claim_geographic_validation', {
     p_room_id: roomId,
     p_round_id: roundId,
   });
   if (error || !data) throw new Error('Could not claim test validation');
   const job = data as { claim: string; answers: { player_id: string; category: string }[] };
-  const result = await admin.rpc('complete_ai_validation', {
+  const result = await admin.rpc('complete_geographic_validation', {
     p_room_id: roomId,
     p_round_id: roundId,
     p_claim: job.claim,
@@ -98,7 +98,6 @@ export async function finishValidation(roomId: string, roundId: string): Promise
       status: 'VALID',
       reason: null,
       suggestion: null,
-      model: 'test-worker',
     })),
   });
   if (result.error || !result.data) throw new Error('Test validation did not complete');

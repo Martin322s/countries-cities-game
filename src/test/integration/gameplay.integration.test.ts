@@ -238,7 +238,7 @@ describe.skipIf(!url || !key)('gameplay against local Supabase', () => {
       players.map((p) => p.client.rpc('set_results_ready', { p_room_id: roomId })),
     );
     expect(ready.map(errorCode)).toEqual(['ok', 'ok', 'ok']);
-    expect((await gameState(kaloyan, roomId)).phase).toBe('AI_VALIDATING');
+    expect((await gameState(kaloyan, roomId)).phase).toBe('MAP_VALIDATING');
     await finishValidation(roomId, roundId);
     expect((await gameState(kaloyan, roomId)).phase).toBe('REVEAL');
     const revealed = await desi.client.from('answers').select('player_id').eq('round_id', roundId);

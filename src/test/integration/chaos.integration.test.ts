@@ -45,7 +45,14 @@ async function roundRow(roundId: string) {
 /** Drives a fresh 3-player room to the given phase. Returns room, players, round. */
 async function roomIn(
   phase:
-    'LOBBY' | 'ROUND_WAITING' | 'COUNTDOWN' | 'PLAYING' | 'RESULTS_READY' | 'REVEAL' | 'RESULTS',
+    | 'LOBBY'
+    | 'ROUND_WAITING'
+    | 'COUNTDOWN'
+    | 'PLAYING'
+    | 'RESULTS_READY'
+    | 'MAP_VALIDATING'
+    | 'REVEAL'
+    | 'RESULTS',
 ) {
   const { roomId, players } = await roomWith(3);
   const [host] = players as [Player, Player, Player];
@@ -71,6 +78,7 @@ async function roomIn(
   );
   if (phase === 'RESULTS_READY') return { roomId, players, roundId };
   await Promise.all(players.map((p) => p.client.rpc('set_results_ready', { p_room_id: roomId })));
+  if (phase === 'MAP_VALIDATING') return { roomId, players, roundId };
   await finishValidation(roomId, roundId);
   if (phase === 'REVEAL') return { roomId, players, roundId };
   await shiftRound(roundId, ['reveal_at'], 30_000);

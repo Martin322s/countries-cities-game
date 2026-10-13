@@ -1,15 +1,10 @@
-﻿import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type {
+  GeographicCategory,
   GeographicPlaceProvider,
   GeographicPlaceRecord,
 } from '../../../src/domain/validation.ts';
 import type { Database } from '../../../src/shared/lib/database.types';
-import {
-  extractResponseText,
-  judgeInstructions,
-  resultSchema,
-  type LockedAnswer,
-} from './protocol.ts';
 import { GeoapifyPlaceProvider, GeoapifyProviderError } from './geoapifyPlaceProvider.ts';
 
 const headers = {
@@ -20,8 +15,12 @@ const headers = {
 };
 const reply = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers });
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const GEOGRAPHIC_CATEGORIES = new Set(['country', 'city', 'village']);
+const isGeographicCategory = (category: string): category is GeographicCategory =>
+  GEOGRAPHIC_CATEGORIES.has(category);
 const COUNTRY_SET = new Set([
   'австрия',
   'азербайджан',
@@ -211,11 +210,17 @@ function levenshtein(left: string, right: string): number {
   const distances = Array.from({ length: left.length + 1 }, () =>
     new Array<number>(right.length + 1).fill(0),
   );
-  for (let i = 0; i <= left.length; i++) distances[i]![0] = i;
-  for (let j = 0; j <= right.length; j++) distances[0]![j] = j;
+  for (let i = 0; i <= left.length; i++) {
+    const row = distances[i];
+    if (row) row[0] = i;
+  }
+  const firstRow = distances[0];
+  if (!firstRow) return 0;
+  for (let j = 0; j <= right.length; j++) firstRow[j] = j;
   for (let i = 1; i <= left.length; i++) {
-    const previousRow = distances[i - 1]!;
-    const currentRow = distances[i]!;
+    const previousRow = distances[i - 1];
+    const currentRow = distances[i];
+    if (!previousRow || !currentRow) continue;
     for (let j = 1; j <= right.length; j++) {
       const cost = left[i - 1] === right[j - 1] ? 0 : 1;
       const previousValue = previousRow[j] ?? 0;
@@ -249,12 +254,15 @@ function validateCountryDecision(
   return { status: 'INVALID', reason: 'DOES_NOT_EXIST', suggestion: null };
 }
 
-type GeographicValidationResult = {
+interface GeographicValidationResult {
   status: 'VALID' | 'INVALID';
   reason: string | null;
   suggestion: string | null;
-  model: string;
-};
+}
+
+interface GeographicCacheResult extends GeographicValidationResult {
+  provider: 'geoapify';
+}
 
 interface GeographicCacheEntry {
   result: Record<string, unknown>;
@@ -266,11 +274,11 @@ const NEGATIVE_GEOGRAPHIC_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 async function fetchCachedGeographicResult(
   admin: SupabaseClient<Database>,
   name: string,
-  category: string,
+  category: GeographicCategory,
 ): Promise<GeographicCacheEntry | undefined> {
   try {
-    const cache = admin.from('geographic_validation_cache' as never) as any;
-    const { data, error } = await cache
+    const { data, error } = await admin
+      .from('geographic_validation_cache')
       .select('*')
       .eq('normalized_name', `geoapify-v1:${normalizeGeoName(name)}`)
       .eq('requested_category', category)
@@ -279,11 +287,10 @@ async function fetchCachedGeographicResult(
       console.warn('Geoapify cache read failed', { code: error.code, message: error.message });
       return undefined;
     }
-    const row = data as { result?: unknown; validated_at?: unknown } | null;
-    if (row && typeof row.result === 'object' && row.result !== null) {
+    if (data && isRecord(data.result)) {
       return {
-        result: row.result as Record<string, unknown>,
-        validatedAt: typeof row.validated_at === 'string' ? row.validated_at : null,
+        result: data.result,
+        validatedAt: data.validated_at,
       };
     }
   } catch (error) {
@@ -297,24 +304,27 @@ async function fetchCachedGeographicResult(
 async function storeCachedGeographicResult(
   admin: SupabaseClient<Database>,
   name: string,
-  category: string,
-  decision: Record<string, unknown>,
+  category: GeographicCategory,
+  decision: GeographicCacheResult,
   canonicalName?: string,
   countryCode?: string,
-  rawMetadata?: Record<string, unknown>,
 ) {
   try {
-    const cache = admin.from('geographic_validation_cache' as never) as any;
-    const { error } = await cache.upsert(
+    const { error } = await admin.from('geographic_validation_cache').upsert(
       {
         normalized_name: `geoapify-v1:${normalizeGeoName(name)}`,
         requested_category: category,
-        result: decision,
+        result: {
+          status: decision.status,
+          reason: decision.reason,
+          suggestion: decision.suggestion,
+          provider: decision.provider,
+        },
         osm_type: null,
         osm_id: null,
         canonical_name: canonicalName ?? name,
         country_code: countryCode ?? null,
-        raw_metadata: rawMetadata ?? null,
+        raw_metadata: null,
         validated_at: new Date().toISOString(),
       },
       { onConflict: 'normalized_name,requested_category' },
@@ -333,16 +343,16 @@ async function validateGeographicAnswer(
   provider: GeographicPlaceProvider,
   answer: string,
   letter: string,
-  category: string,
+  category: GeographicCategory,
   lookupMemo: Map<string, Promise<GeographicPlaceRecord[]>>,
 ): Promise<GeographicValidationResult> {
   const normalized = normalizeGeoName(answer);
   const letterNormalized = normalizeGeoName(letter);
   if (!normalized) {
-    return { status: 'INVALID', reason: 'DOES_NOT_EXIST', suggestion: null, model: 'geoapify' };
+    return { status: 'INVALID', reason: 'DOES_NOT_EXIST', suggestion: null };
   }
   if (!normalized.startsWith(letterNormalized)) {
-    return { status: 'INVALID', reason: 'WRONG_LETTER', suggestion: null, model: 'geoapify' };
+    return { status: 'INVALID', reason: 'WRONG_LETTER', suggestion: null };
   }
   const cached = await fetchCachedGeographicResult(admin, answer, category);
   const negativeCacheTimestamp = cached?.validatedAt ? Date.parse(cached.validatedAt) : NaN;
@@ -350,7 +360,7 @@ async function validateGeographicAnswer(
     cached?.result.status === 'INVALID' &&
     (!Number.isFinite(negativeCacheTimestamp) ||
       Date.now() - negativeCacheTimestamp >= NEGATIVE_GEOGRAPHIC_CACHE_TTL_MS);
-  if (cached?.result.model === 'geoapify' && !negativeCacheExpired) {
+  if (cached?.result.provider === 'geoapify' && !negativeCacheExpired) {
     const status = cached.result.status === 'VALID' ? 'VALID' : 'INVALID';
     const validReason = new Set([
       'WRONG_LETTER',
@@ -367,7 +377,6 @@ async function validateGeographicAnswer(
       status,
       reason: status === 'VALID' ? null : (reason ?? 'AMBIGUOUS'),
       suggestion: typeof cached.result.suggestion === 'string' ? cached.result.suggestion : null,
-      model: 'geoapify',
     };
   }
 
@@ -402,9 +411,11 @@ async function validateGeographicAnswer(
       status: 'INVALID',
       reason: misspelling ? 'MISSPELLING' : 'DOES_NOT_EXIST',
       suggestion: misspelling?.name ?? null,
-      model: 'geoapify',
     };
-    await storeCachedGeographicResult(admin, answer, category, decision);
+    await storeCachedGeographicResult(admin, answer, category, {
+      ...decision,
+      provider: 'geoapify',
+    });
     return decision;
   }
 
@@ -415,16 +426,14 @@ async function validateGeographicAnswer(
       status: 'VALID',
       reason: null,
       suggestion: null,
-      model: 'geoapify',
     };
     await storeCachedGeographicResult(
       admin,
       answer,
       category,
-      decision,
+      { ...decision, provider: 'geoapify' },
       exactWithRequestedType.canonicalName,
       exactWithRequestedType.countryCode,
-      exactWithRequestedType.raw,
     );
     return decision;
   }
@@ -434,9 +443,11 @@ async function validateGeographicAnswer(
     status: 'INVALID',
     reason: hasAmbiguousExact ? 'AMBIGUOUS' : 'WRONG_CATEGORY',
     suggestion: null,
-    model: 'geoapify',
   };
-  await storeCachedGeographicResult(admin, answer, category, decision);
+  await storeCachedGeographicResult(admin, answer, category, {
+    ...decision,
+    provider: 'geoapify',
+  });
   return decision;
 }
 
@@ -462,8 +473,10 @@ Deno.serve(async (req: Request) => {
   } catch {
     return reply(400, { error: 'Invalid JSON' });
   }
-  if (typeof body !== 'object' || body === null) return reply(400, { error: 'Invalid request' });
-  const { roomId, roundId } = body as Record<string, unknown>;
+  if (typeof body !== 'object' || body === null || Array.isArray(body))
+    return reply(400, { error: 'Invalid request' });
+  const roomId = Reflect.get(body, 'roomId');
+  const roundId = Reflect.get(body, 'roundId');
   if (
     typeof roomId !== 'string' ||
     typeof roundId !== 'string' ||
@@ -480,170 +493,97 @@ Deno.serve(async (req: Request) => {
     .is('left_at', null)
     .maybeSingle();
   if (memberError) {
-    console.error('Validation membership lookup failed', {
+    console.error('Geographic validation membership lookup failed', {
       code: memberError.code,
       message: memberError.message,
     });
     return reply(503, { error: 'Validation service unavailable' });
   }
   if (!member) return reply(403, { error: 'Not a room member' });
-  const apiKey = Deno.env.get('OPENAI_API_KEY');
-  if (!apiKey) {
-    console.error('Validation service is missing OPENAI_API_KEY');
-    return reply(503, { error: 'Validation service unavailable' });
-  }
-  const { data: rawJob, error: claimError } = await admin.rpc('claim_ai_validation', {
+
+  const { data: rawJob, error: claimError } = await admin.rpc('claim_geographic_validation', {
     p_room_id: roomId,
     p_round_id: roundId,
   });
   if (claimError) {
-    console.error('Validation job claim failed', {
+    console.error('Geographic validation job claim failed', {
       code: claimError.code,
       message: claimError.message,
     });
     return reply(503, { error: 'Validation service unavailable' });
   }
   if (!rawJob) return reply(202, { state: 'already_running_or_finished' });
-  const job = rawJob as unknown as { claim: string; letter: string; answers: LockedAnswer[] };
+  if (
+    !isRecord(rawJob) ||
+    typeof rawJob.claim !== 'string' ||
+    typeof rawJob.letter !== 'string' ||
+    !Array.isArray(rawJob.answers)
+  ) {
+    console.error('Geographic validation job has an invalid shape');
+    return reply(503, { error: 'Validation service unavailable' });
+  }
+  const jobAnswers: { player_id: string; category: string; value: string }[] = [];
+  for (const value of rawJob.answers) {
+    if (
+      !isRecord(value) ||
+      typeof value.player_id !== 'string' ||
+      typeof value.category !== 'string' ||
+      typeof value.value !== 'string'
+    ) {
+      console.error('Geographic validation job contains a malformed answer');
+      return reply(503, { error: 'Validation service unavailable' });
+    }
+    jobAnswers.push({
+      player_id: value.player_id,
+      category: value.category,
+      value: value.value,
+    });
+  }
+  const job = { claim: rawJob.claim, letter: rawJob.letter, answers: jobAnswers };
   const geoapifyProvider = new GeoapifyPlaceProvider(Deno.env.get('GEOAPIFY_API_KEY') ?? '');
-  const model = Deno.env.get('OPENAI_MODEL') ?? 'gpt-4.1-mini';
   let stage = 'prepare';
   try {
-    const byIndex = new Map<
-      number,
-      {
-        index: number;
-        status: 'VALID' | 'INVALID';
-        reason: string | null;
-        suggestion: string | null;
-        model: string;
-      }
-    >();
-    const nonGeographicRows: Array<{ index: number; category: string; value: string }> = [];
     const geographicLookups = new Map<string, Promise<GeographicPlaceRecord[]>>();
-    for (const [index, answer] of job.answers.entries()) {
-      const trimmed = answer.value.trim();
-      if (!trimmed) {
-        byIndex.set(index, {
-          index,
-          status: 'INVALID',
-          reason: 'DOES_NOT_EXIST',
-          suggestion: null,
-          model: 'empty',
-        });
-        continue;
+    const results = [];
+    for (const answer of job.answers) {
+      if (
+        typeof answer.player_id !== 'string' ||
+        typeof answer.category !== 'string' ||
+        typeof answer.value !== 'string' ||
+        !isGeographicCategory(answer.category)
+      ) {
+        throw new Error('Geographic job included an invalid answer');
       }
-      if (GEOGRAPHIC_CATEGORIES.has(answer.category)) {
-        stage = 'geographic-validation';
-        const decision =
-          answer.category === 'country'
-            ? { ...validateCountryDecision(answer.value, job.letter), model: 'country-database' }
-            : await validateGeographicAnswer(
-                admin,
-                geoapifyProvider,
-                answer.value,
-                job.letter,
-                answer.category,
-                geographicLookups,
-              );
-        byIndex.set(index, { index, ...decision });
-        continue;
-      }
-      nonGeographicRows.push({ index, category: answer.category, value: answer.value });
-    }
-
-    if (nonGeographicRows.length) {
-      stage = 'openai-validation';
-      const response = await fetch('https://api.openai.com/v1/responses', {
-        method: 'POST',
-        signal: AbortSignal.timeout(45_000),
-        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model,
-          store: false,
-          instructions: judgeInstructions,
-          input: JSON.stringify({ letter: job.letter, answers: nonGeographicRows }),
-          text: {
-            format: {
-              type: 'json_schema',
-              name: 'round_validation_result',
-              strict: true,
-              schema: resultSchema,
-            },
-          },
-        }),
-      });
-      if (!response.ok) throw new Error(`Model request failed with status ${response.status}`);
-      const parsed = JSON.parse(extractResponseText(await response.json())) as {
-        results?: Array<Record<string, unknown>>;
-      };
-      const expectedIndexes = new Set(nonGeographicRows.map((entry) => entry.index));
-      const receivedIndexes = new Set<number>();
-      for (const item of parsed.results ?? []) {
-        const index = typeof item.index === 'number' ? item.index : NaN;
-        if (!Number.isInteger(index) || !expectedIndexes.has(index)) continue;
-        const answer = job.answers[index];
-        if (!answer || GEOGRAPHIC_CATEGORIES.has(answer.category)) continue;
-        const wrongLetter =
-          answer.value.trim() &&
-          !answer.value
-            .normalize('NFC')
-            .trim()
-            .toLocaleLowerCase('bg-BG')
-            .startsWith(job.letter.toLocaleLowerCase('bg-BG'));
-        const status = wrongLetter ? 'INVALID' : (item.status as 'VALID' | 'INVALID');
-        const reason = wrongLetter
-          ? 'WRONG_LETTER'
-          : status === 'VALID'
-            ? null
-            : typeof item.reason === 'string'
-              ? item.reason
-              : 'AMBIGUOUS';
-        receivedIndexes.add(index);
-        byIndex.set(index, {
-          index,
-          status,
-          reason,
-          suggestion:
-            wrongLetter || status === 'VALID'
-              ? null
-              : typeof item.suggestion === 'string'
-                ? item.suggestion
-                : null,
-          model,
-        });
-      }
-      if (receivedIndexes.size !== expectedIndexes.size) {
-        throw new Error('Incomplete validation response');
-      }
-    }
-
-    const results = job.answers.map((answer, index) => {
-      const decision = byIndex.get(index) ?? {
-        index,
-        status: 'INVALID',
-        reason: 'DOES_NOT_EXIST',
-        suggestion: null,
-        model: 'empty',
-      };
-      return {
+      stage = 'geographic-validation';
+      const decision =
+        answer.category === 'country'
+          ? validateCountryDecision(answer.value, job.letter)
+          : await validateGeographicAnswer(
+              admin,
+              geoapifyProvider,
+              answer.value,
+              job.letter,
+              answer.category,
+              geographicLookups,
+            );
+      results.push({
         player_id: answer.player_id,
         category: answer.category,
         status: decision.status,
         reason: decision.reason,
         suggestion: decision.suggestion,
-        model: decision.model,
-      };
-    });
+      });
+    }
+
     stage = 'publish-results';
-    const { data: completed, error } = await admin.rpc('complete_ai_validation', {
+    const { data: completed, error } = await admin.rpc('complete_geographic_validation', {
       p_room_id: roomId,
       p_round_id: roundId,
       p_claim: job.claim,
       p_results: results,
     });
-    if (error) throw new Error('Could not publish validation');
-    if (!completed) throw new Error('Validation lease was no longer active');
+    if (error) throw new Error('Could not publish geographic validation');
+    if (!completed) throw new Error('Geographic validation lease was no longer active');
     return reply(200, { state: 'completed' });
   } catch (error) {
     if (error instanceof GeoapifyProviderError) {
@@ -655,7 +595,7 @@ Deno.serve(async (req: Request) => {
         durationMs: error.durationMs,
       });
     }
-    console.error('Validation worker failed', {
+    console.error('Geographic validation worker failed', {
       roomId,
       roundId,
       stage,
@@ -664,12 +604,12 @@ Deno.serve(async (req: Request) => {
           ? { name: error.name, message: error.message.slice(0, 300) }
           : { name: 'UnknownError' },
     });
-    const { error: releaseError } = await admin.rpc('release_ai_validation', {
+    const { error: releaseError } = await admin.rpc('release_geographic_validation', {
       p_round_id: roundId,
       p_claim: job.claim,
     });
     if (releaseError) {
-      console.error('Validation lease release failed', {
+      console.error('Geographic validation lease release failed', {
         code: releaseError.code,
         message: releaseError.message,
       });

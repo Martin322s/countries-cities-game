@@ -3,16 +3,18 @@
 All authority over rooms lives here: schema, constraints, RLS, Realtime authorization
 and the RPC functions the client calls.
 
-| Migration                              | Contents                                                                                                                                                                                                                                                         |
-| -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `20261002000000_initial_schema`        | Tables, enums, constraints, member read-only RLS                                                                                                                                                                                                                 |
-| `20261002010000_rooms_lobby`           | Name keys + uniqueness, room RPCs, maintenance, privileges, Realtime publication + channel RLS                                                                                                                                                                   |
-| `20261003000000_gameplay_rounds`       | Round timing/lock columns, participant snapshot, ready stages, gameplay RPCs, answer privacy, lazy game advancement                                                                                                                                              |
-| `20261004000000_round_results`         | `reveal_at`, derived scoring (`round_cells`), results API, host invalidation + audit trail, `results_revision`                                                                                                                                                   |
-| `20261006000000_visibility_monitoring` | Fair-play away intervals: `report_visibility`, `get_round_activity`, one-open-interval index, finalization triggers, immutability, realtime                                                                                                                      |
-| `20261007000000_production_hardening`  | Rate limiting (PostgREST pre-request hook, `private` schema), 16 KB request limit, size guards before normalization, room-code guessing limit (`join_room` → NULL for unknown codes), retention cleanup + `pg_cron`, cascade indexes, faster `standings_through` |
-| `20261005000000_multi_round_game`      | Next round, snapshot/sequence guards, standings "as of" a round, progress + history in game state, finish, summary                                                                                                                                               |
-| `20261013000000_ai_validation`         | AI validation phase, answer validation columns/tables, and strict structured validation results for all round answers                                                                                                                                            |
+| Migration                                   | Contents                                                                                                                                                                                                                                                         |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `20261002000000_initial_schema`             | Tables, enums, constraints, member read-only RLS                                                                                                                                                                                                                 |
+| `20261002010000_rooms_lobby`                | Name keys + uniqueness, room RPCs, maintenance, privileges, Realtime publication + channel RLS                                                                                                                                                                   |
+| `20261003000000_gameplay_rounds`            | Round timing/lock columns, participant snapshot, ready stages, gameplay RPCs, answer privacy, lazy game advancement                                                                                                                                              |
+| `20261004000000_round_results`              | `reveal_at`, derived scoring (`round_cells`), results API, host invalidation + audit trail, `results_revision`                                                                                                                                                   |
+| `20261006000000_visibility_monitoring`      | Fair-play away intervals: `report_visibility`, `get_round_activity`, one-open-interval index, finalization triggers, immutability, realtime                                                                                                                      |
+| `20261007000000_production_hardening`       | Rate limiting (PostgREST pre-request hook, `private` schema), 16 KB request limit, size guards before normalization, room-code guessing limit (`join_room` → NULL for unknown codes), retention cleanup + `pg_cron`, cascade indexes, faster `standings_through` |
+| `20261005000000_multi_round_game`           | Next round, snapshot/sequence guards, standings "as of" a round, progress + history in game state, finish, summary                                                                                                                                               |
+| `20261013000000_ai_validation`              | Historical validation schema (superseded by geographic-only validation)                                                                                                                                                                                          |
+| `20261017040100_add_map_validating_phase`   | Adds the geographic validation phase                                                                                                                                                                                                                             |
+| `20261017050000_geographic_only_validation` | Keeps country/city/village checks, removes the AI worker and its audit data; other categories are host-judged                                                                                                                                                    |
 
 ## Local development
 
@@ -103,9 +105,10 @@ the round. `ready_checks` rows must reference a participant (FK) and are keyed b
 2. `COUNTDOWN` → `PLAYING` once `now() ≥ started_at`. `used_letters` is extended here.
 3. `PLAYING` → `RESULTS_READY` when `now() ≥ ends_at` (`timeout`, `locked_at = ends_at`) or
    STOP through `lock_answers` (`stop`).
-4. `RESULTS_READY` → `REVEAL` when `all_required_ready(pre_results)`. This sets
-   `rounds.reveal_at = now()` exactly once.
-5. `REVEAL` → `RESULTS` once `now() ≥ reveal_at + reveal_duration()` (11 s).
+4. `RESULTS_READY` → `MAP_VALIDATING` when `all_required_ready(pre_results)`.
+5. `MAP_VALIDATING` → `REVEAL` after country, city and village validation completes,
+   or after the 180-second provider timeout. This sets `rounds.reveal_at`.
+6. `REVEAL` → `RESULTS` once `now() ≥ reveal_at + reveal_duration()` (11 s).
 
 ## Results
 

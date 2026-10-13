@@ -10,7 +10,7 @@ const cell: ResultCell = {
   duplicateCount: 0,
 };
 describe('invalidation explanation', () => {
-  it('explains a spelling verdict and shows the persisted suggestion', () => {
+  it('explains a geographic spelling verdict and shows the persisted suggestion', () => {
     expect(
       invalidationExplanation({
         ...cell,
@@ -19,7 +19,7 @@ describe('invalidation explanation', () => {
       }),
     ).toContain('Предложената поправка е „Ямайка“');
   });
-  it('distinguishes manual invalidation from an AI verdict', () => {
+  it('distinguishes manual invalidation from a geographic verdict', () => {
     expect(
       invalidationExplanation({
         ...cell,
@@ -28,11 +28,10 @@ describe('invalidation explanation', () => {
       }),
     ).toContain('Конкретно обяснение за ръчното анулиране не е записано');
   });
-  it('does not describe uncertainty or timeout as proof of a nonexistent word', () => {
+  it('does not describe uncertainty as proof of a nonexistent word', () => {
     expect(invalidationExplanation({ ...cell, validationReason: 'AMBIGUOUS' })).toContain(
-      'поради несигурност',
+      'Географската проверка',
     );
-    expect(invalidationExplanation({ ...cell, validationTimedOut: true })).toContain('не приключи');
   });
   it.each(['DOES_NOT_EXIST', 'WRONG_CATEGORY', 'WRONG_LETTER'] as const)(
     'explains %s',

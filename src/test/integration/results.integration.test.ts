@@ -110,7 +110,7 @@ describe.skipIf(!hasLocalSupabase)('round results against local Supabase', () =>
     );
     expect(ready.map(errorCode).every((code) => code === 'ok')).toBe(true);
 
-    expect((await gameState(players[0]!, roomId)).phase).toBe('AI_VALIDATING');
+    expect((await gameState(players[0]!, roomId)).phase).toBe('MAP_VALIDATING');
     await finishValidation(roomId, roundId);
     const states = await Promise.all(players.map((p) => gameState(p, roomId)));
     const revealAts = new Set(states.map((s) => s.round?.reveal_at));

@@ -8,7 +8,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 
 select no_plan();
-\ir ../helpers/ai_validation.sql
+\ir ../helpers/geographic_validation.sql
 
 insert into auth.users (id, aud, role, is_anonymous)
 values

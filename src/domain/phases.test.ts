@@ -18,7 +18,7 @@ describe('game phase state machine', () => {
       'PLAYING',
       'ROUND_LOCKED',
       'RESULTS_READY',
-      'AI_VALIDATING',
+      'MAP_VALIDATING',
       'REVEAL',
       'RESULTS',
       'ROUND_WAITING',

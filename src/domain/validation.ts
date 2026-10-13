@@ -8,7 +8,7 @@
 
 export const GEOGRAPHIC_CATEGORIES = ['country', 'city', 'village'] as const;
 export type GeographicCategory = (typeof GEOGRAPHIC_CATEGORIES)[number];
-export type ValidationSource = 'COUNTRY_DATABASE' | 'OPENSTREETMAP' | 'OPENAI' | 'HOST';
+export type ValidationSource = 'COUNTRY_DATABASE' | 'OPENSTREETMAP' | 'HOST';
 
 export type ValidationReason = (typeof VALIDATION_REASONS)[number];
 export type ValidationStatus = 'VALID' | 'INVALID';
@@ -217,13 +217,21 @@ const COUNTRY_SET = new Set<string>([
 ]);
 
 function levenshtein(left: string, right: string): number {
-  const distances = Array.from({ length: left.length + 1 }, () => new Array<number>(right.length + 1).fill(0));
-  for (let i = 0; i <= left.length; i++) distances[i]![0] = i;
-  for (let j = 0; j <= right.length; j++) distances[0]![j] = j;
+  const distances = Array.from({ length: left.length + 1 }, () =>
+    new Array<number>(right.length + 1).fill(0),
+  );
+  for (let i = 0; i <= left.length; i++) {
+    const row = distances[i];
+    if (row) row[0] = i;
+  }
+  const firstRow = distances[0];
+  if (!firstRow) return 0;
+  for (let j = 0; j <= right.length; j++) firstRow[j] = j;
 
   for (let i = 1; i <= left.length; i++) {
-    const previousRow = distances[i - 1]!;
-    const currentRow = distances[i]!;
+    const previousRow = distances[i - 1];
+    const currentRow = distances[i];
+    if (!previousRow || !currentRow) continue;
     for (let j = 1; j <= right.length; j++) {
       const cost = left[i - 1] === right[j - 1] ? 0 : 1;
       const previousValue = previousRow[j] ?? 0;
@@ -249,19 +257,39 @@ export function buildCountryValidationDecision(
   const letterNormalized = normalizeAnswerForValidation(letter);
 
   if (normalized.length === 0) {
-    return { status: 'INVALID', reason: 'DOES_NOT_EXIST', suggestion: null, validationSource: 'COUNTRY_DATABASE' };
+    return {
+      status: 'INVALID',
+      reason: 'DOES_NOT_EXIST',
+      suggestion: null,
+      validationSource: 'COUNTRY_DATABASE',
+    };
   }
 
   if (!normalized.startsWith(letterNormalized)) {
-    return { status: 'INVALID', reason: 'WRONG_LETTER', suggestion: null, validationSource: 'COUNTRY_DATABASE' };
+    return {
+      status: 'INVALID',
+      reason: 'WRONG_LETTER',
+      suggestion: null,
+      validationSource: 'COUNTRY_DATABASE',
+    };
   }
 
   if (knownValue && normalizeAnswerForValidation(knownValue) === normalized) {
-    return { status: 'VALID', reason: null, suggestion: null, validationSource: 'COUNTRY_DATABASE' };
+    return {
+      status: 'VALID',
+      reason: null,
+      suggestion: null,
+      validationSource: 'COUNTRY_DATABASE',
+    };
   }
 
   if (isCountryNameValid(answer)) {
-    return { status: 'VALID', reason: null, suggestion: null, validationSource: 'COUNTRY_DATABASE' };
+    return {
+      status: 'VALID',
+      reason: null,
+      suggestion: null,
+      validationSource: 'COUNTRY_DATABASE',
+    };
   }
 
   const closeMatch = Array.from(COUNTRY_SET)

@@ -163,7 +163,7 @@ rejection leads to a fresh anonymous session.
 | `set_round_ready(room_id)`                                                    | Pre-round ready for the caller; the last one triggers the letter draw                           |
 | `save_answers(room_id, round_id, answers)`                                    | Upserts the caller's answers while the round is open (server time)                              |
 | `lock_answers(room_id, round_id)`                                             | STOP: atomically closes answering for all participants                                          |
-| `set_results_ready(room_id)`                                                  | Independent READY; all required confirmations start AI_VALIDATING                               |
+| `set_results_ready(room_id)`                                                  | Independent READY; all required confirmations start geographic validation                       |
 | `get_game_state(room_id)`                                                     | Read model: phase, round timing, letter (once revealed), statuses, server time                  |
 | `get_round_results(room_id, round_id?)`                                       | Server-scored results of a revealed round + standings as of that round                          |
 | `get_game_summary(room_id)`                                                   | Final standings (points, rounds played), room code, rounds completed                            |
@@ -244,7 +244,7 @@ to report `SUBSCRIBED` only once the change stream is live.
 
 ```
 LOBBY ──start_game (host)──▶ ROUND_WAITING ──all ready──▶ COUNTDOWN (3 s) ──started_at──▶ PLAYING (60 s)
-PLAYING ──STOP | ends_at──▶ (ROUND_LOCKED) ▶ RESULTS_READY ──all ready──▶ REVEAL ──11 s──▶ RESULTS
+PLAYING ──STOP | ends_at──▶ (ROUND_LOCKED) ▶ RESULTS_READY ──all ready──▶ MAP_VALIDATING ──▶ REVEAL ──11 s──▶ RESULTS
 ```
 
 `ROUND_LOCKED` is passed through inside the locking transaction. The persisted phase after a
@@ -378,7 +378,7 @@ the timer.
 ### Flow
 
 ```
-RESULTS_READY ──all ready──▶ REVEAL [reveal_at fixed by the server] ──reveal_at + 11 s──▶ RESULTS
+RESULTS_READY ──all ready──▶ MAP_VALIDATING ──geographic checks──▶ REVEAL [reveal_at fixed by the server] ──reveal_at + 11 s──▶ RESULTS
 ```
 
 The final "ГОТОВ ЗА РЕЗУЛТАТИТЕ" request sets `rounds.reveal_at = now()` under the room lock.
@@ -692,24 +692,25 @@ widths (`max-w-3xl` for play, `max-w-7xl` for results) on large displays.
 ## Game state machine
 
 ```
-LOBBY → ROUND_WAITING → COUNTDOWN → PLAYING → ROUND_LOCKED → RESULTS_READY → REVEAL → RESULTS
+LOBBY → ROUND_WAITING → COUNTDOWN → PLAYING → ROUND_LOCKED → RESULTS_READY → MAP_VALIDATING → REVEAL → RESULTS
              ↑                                                                          │
              └──────────────────────── host: "НОВ РУНД" ────────────────────────────────┤
                                                                                         ↓
                                          FINISHED (host, after round 28 — all letters used)
 ```
 
-| Phase           | Meaning                                                               |
-| --------------- | --------------------------------------------------------------------- |
-| `LOBBY`         | Players join; host waits                                              |
-| `ROUND_WAITING` | Pre-round ready check ("ГОТОВ")                                       |
-| `COUNTDOWN`     | Short countdown, then the letter is revealed                          |
-| `PLAYING`       | 2-minute answering window; "ГОТОВ" submits and locks your answers     |
-| `ROUND_LOCKED`  | All answers locked (everyone submitted, or time ran out)              |
-| `RESULTS_READY` | Pre-results ready check                                               |
-| `REVEAL`        | Suspense + animated reveal                                            |
-| `RESULTS`       | Results table, host invalidation, leaderboard; host starts next round |
-| `FINISHED`      | All 28 letters played and the host opened the final standings         |
+| Phase            | Meaning                                                               |
+| ---------------- | --------------------------------------------------------------------- |
+| `LOBBY`          | Players join; host waits                                              |
+| `ROUND_WAITING`  | Pre-round ready check ("ГОТОВ")                                       |
+| `COUNTDOWN`      | Short countdown, then the letter is revealed                          |
+| `PLAYING`        | 2-minute answering window; "ГОТОВ" submits and locks your answers     |
+| `ROUND_LOCKED`   | All answers locked (everyone submitted, or time ran out)              |
+| `RESULTS_READY`  | Pre-results ready check                                               |
+| `MAP_VALIDATING` | Country, city and village answers are checked against geographic data |
+| `REVEAL`         | Suspense + animated reveal                                            |
+| `RESULTS`        | Results table, host invalidation, leaderboard; host starts next round |
+| `FINISHED`       | All 28 letters played and the host opened the final standings         |
 
 The legal transitions are in `src/domain/phases.ts` (`PHASE_TRANSITIONS`).
 
@@ -731,7 +732,8 @@ The legal transitions are in `src/domain/phases.ts` (`PHASE_TRANSITIONS`).
 
 - Duplicate comparison uses `normalizeAnswer`: NFC Unicode normalization, collapsed
   whitespace, trimmed, and Bulgarian-locale lowercase. Nothing else is folded.
-- No dictionary/AI validation of whether an answer is real. The host judges.
+- Countries are checked against a local list, and cities and villages against
+  Geoapify/OpenStreetMap data. The host judges answers in the other categories.
 - Display names are trimmed, 1–20 characters, and unique among a room's active players
   (case-insensitive). They're never auto-renamed.
 

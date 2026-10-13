@@ -129,7 +129,7 @@ function RoomPhaseView({ room, playerId }: { room: RoomSummary; playerId: Player
     case 'PLAYING':
     case 'ROUND_LOCKED':
     case 'RESULTS_READY':
-    case 'AI_VALIDATING':
+    case 'MAP_VALIDATING':
     case 'REVEAL':
     case 'RESULTS':
     case 'FINISHED':

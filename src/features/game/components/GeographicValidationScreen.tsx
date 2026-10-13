@@ -6,8 +6,18 @@ import { roomKeys } from '@/features/rooms/api/queryKeys';
 import { getSupabaseClient } from '@/shared/lib/supabase';
 import { Notice } from '@/shared/ui/Notice';
 
+interface GeographicWorkerResponse {
+  state: 'completed' | 'already_running_or_finished';
+}
+
 /** Any member can wake the worker; the server claims one job per round. */
-export function AiValidationScreen({ roomId, roundId }: { roomId: RoomId; roundId: RoundId }) {
+export function GeographicValidationScreen({
+  roomId,
+  roundId,
+}: {
+  roomId: RoomId;
+  roundId: RoundId;
+}) {
   const queryClient = useQueryClient();
   const [retrying, setRetrying] = useState(false);
 
@@ -23,17 +33,14 @@ export function AiValidationScreen({ roomId, roundId }: { roomId: RoomId; roundI
     };
     const wakeWorker = async () => {
       try {
-        const result = await getSupabaseClient().functions.invoke(
+        const result = await getSupabaseClient().functions.invoke<GeographicWorkerResponse>(
           'validate-round-answers',
           {
             body: { roomId, roundId },
           },
         );
         if (result.error) throw new Error('Validation request failed');
-        const state =
-          typeof result.data === 'object' && result.data !== null && 'state' in result.data
-            ? result.data.state
-            : null;
+        const state = result.data?.state;
         if (state !== 'completed' && state !== 'already_running_or_finished') {
           throw new Error('Unexpected validation response');
         }
@@ -58,9 +65,9 @@ export function AiValidationScreen({ roomId, roundId }: { roomId: RoomId; roundI
 
   return (
     <div className="flex flex-col items-center gap-4 rounded-panel bg-ink-900/40 p-6 text-center">
-      <h1 className="font-display text-3xl font-black">ПРОВЕРКА НА ОТГОВОРИТЕ</h1>
+      <h1 className="font-display text-3xl font-black">ГЕОГРАФСКА ПРОВЕРКА</h1>
       <p role="status" className="text-fg-muted">
-        Всички са готови. Проверяваме заключените отговори...
+        Проверяваме държавите, градовете и селата по географски данни...
       </p>
       {retrying ? (
         <Notice tone="warning">Проверката се забави. Опитваме отново автоматично.</Notice>

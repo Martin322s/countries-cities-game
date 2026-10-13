@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { buildValidationDecision, normalizeAnswerForValidation } from './validation';
 
-describe('AI answer validation helpers', () => {
+describe('geographic answer validation helpers', () => {
   it('normalizes only the allowed whitespace and casing differences', () => {
     expect(normalizeAnswerForValidation(' Ямайка ')).toBe('ямайка');
     expect(normalizeAnswerForValidation('ЯМАЙКА')).toBe('ямайка');

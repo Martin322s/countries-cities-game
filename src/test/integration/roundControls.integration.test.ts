@@ -130,7 +130,7 @@ describe.skipIf(!hasLocalSupabase)('STOP / READY multiplayer controls', () => {
           ]),
       );
       expect(ready.map(errorCode)).toEqual(['ok', 'ok', 'ok', 'ok']);
-      expect((await gameState(host, roomId)).phase).toBe('AI_VALIDATING');
+      expect((await gameState(host, roomId)).phase).toBe('MAP_VALIDATING');
       await finishValidation(roomId, roundId);
       const revealed = await gameState(host, roomId);
       expect(revealed.phase).toBe('REVEAL');
@@ -164,8 +164,8 @@ describe.skipIf(!hasLocalSupabase)('STOP / READY multiplayer controls', () => {
     const host = players[0]!;
     await host.client.rpc('lock_answers', { p_room_id: roomId, p_round_id: roundId });
     await Promise.all(players.map((p) => p.client.rpc('set_results_ready', { p_room_id: roomId })));
-    expect((await gameState(host, roomId)).phase).toBe('AI_VALIDATING');
-    const forbidden = await host.client.rpc('claim_ai_validation', {
+    expect((await gameState(host, roomId)).phase).toBe('MAP_VALIDATING');
+    const forbidden = await host.client.rpc('claim_geographic_validation', {
       p_room_id: roomId,
       p_round_id: roundId,
     });
@@ -173,7 +173,7 @@ describe.skipIf(!hasLocalSupabase)('STOP / READY multiplayer controls', () => {
     const admin = await localAdmin();
     const claims = await Promise.all(
       Array.from({ length: 8 }, () =>
-        admin.rpc('claim_ai_validation', {
+        admin.rpc('claim_geographic_validation', {
           p_room_id: roomId,
           p_round_id: roundId,
         }),
@@ -184,8 +184,8 @@ describe.skipIf(!hasLocalSupabase)('STOP / READY multiplayer controls', () => {
     expect(claimed).toHaveLength(1);
     const job = claimed[0]!.data as { claim: string };
     const params = { p_room_id: roomId, p_round_id: roundId, p_claim: job.claim, p_results: [] };
-    expect((await admin.rpc('complete_ai_validation', params)).data).toBe(true);
-    expect((await admin.rpc('complete_ai_validation', params)).data).toBe(false);
+    expect((await admin.rpc('complete_geographic_validation', params)).data).toBe(true);
+    expect((await admin.rpc('complete_geographic_validation', params)).data).toBe(false);
     expect((await gameState(host, roomId)).phase).toBe('REVEAL');
   });
 
@@ -205,6 +205,6 @@ describe.skipIf(!hasLocalSupabase)('STOP / READY multiplayer controls', () => {
       .eq('room_id', roomId)
       .eq('player_id', disconnected!.id);
     await host!.client.rpc('heartbeat', { p_room_id: roomId });
-    expect((await gameState(host!, roomId)).phase).toBe('AI_VALIDATING');
+    expect((await gameState(host!, roomId)).phase).toBe('MAP_VALIDATING');
   });
 });

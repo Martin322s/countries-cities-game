@@ -20,7 +20,6 @@ export interface GameRound {
   letter: EligibleLetter | null;
   timeline: RoundTimeline;
   lockReason: RoundLockReason | null;
-  validationTimedOut?: boolean;
 }
 
 /** A round whose results can be browsed (revealed). Its letter is no secret anymore. */
@@ -101,8 +100,6 @@ function parseRound(value: unknown): GameRound | null {
       revealAt: timestamp(value, 'reveal_at'),
     },
     lockReason,
-    validationTimedOut:
-      value.validation_timed_out === undefined ? false : bool(value, 'validation_timed_out'),
   };
 }
 
