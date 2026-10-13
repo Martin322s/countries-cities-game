@@ -38,24 +38,6 @@ export function AppLayout() {
       <footer className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] text-center text-xs text-fg-subtle">
         <span>Без регистрация · Играй от телефон или компютър</span>
         <span aria-hidden="true">·</span>
-        <a
-          href="https://www.geoapify.com/"
-          target="_blank"
-          rel="noreferrer"
-          className="underline-offset-4 hover:text-fg-muted hover:underline"
-        >
-          Powered by Geoapify
-        </a>
-        <span aria-hidden="true">·</span>
-        <a
-          href="https://www.openstreetmap.org/copyright"
-          target="_blank"
-          rel="noreferrer"
-          className="underline-offset-4 hover:text-fg-muted hover:underline"
-        >
-          Geographic data © OpenStreetMap contributors
-        </a>
-        <span aria-hidden="true">·</span>
         <Link to="/about" className="underline-offset-4 hover:text-fg-muted hover:underline">
           За играта
         </Link>

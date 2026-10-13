@@ -4,7 +4,6 @@ import { afterAll, describe, expect, it } from 'vitest';
 import {
   closeAllClients,
   errorCode,
-  finishValidation,
   gameState,
   hasLocalSupabase,
   localAdmin,
@@ -130,8 +129,6 @@ describe.skipIf(!hasLocalSupabase)('STOP / READY multiplayer controls', () => {
           ]),
       );
       expect(ready.map(errorCode)).toEqual(['ok', 'ok', 'ok', 'ok']);
-      expect((await gameState(host, roomId)).phase).toBe('MAP_VALIDATING');
-      await finishValidation(roomId, roundId);
       const revealed = await gameState(host, roomId);
       expect(revealed.phase).toBe('REVEAL');
       await host.client.rpc('set_results_ready', { p_room_id: roomId });
@@ -159,36 +156,6 @@ describe.skipIf(!hasLocalSupabase)('STOP / READY multiplayer controls', () => {
     expect(round.data?.locked_at).toBe(round.data?.ends_at);
   });
 
-  it('allows one trusted worker claim and rejects client or stale completion', async () => {
-    const { roomId, roundId, players } = await playingRoom();
-    const host = players[0]!;
-    await host.client.rpc('lock_answers', { p_room_id: roomId, p_round_id: roundId });
-    await Promise.all(players.map((p) => p.client.rpc('set_results_ready', { p_room_id: roomId })));
-    expect((await gameState(host, roomId)).phase).toBe('MAP_VALIDATING');
-    const forbidden = await host.client.rpc('claim_geographic_validation', {
-      p_room_id: roomId,
-      p_round_id: roundId,
-    });
-    expect(forbidden.error?.code).toBe('42501');
-    const admin = await localAdmin();
-    const claims = await Promise.all(
-      Array.from({ length: 8 }, () =>
-        admin.rpc('claim_geographic_validation', {
-          p_room_id: roomId,
-          p_round_id: roundId,
-        }),
-      ),
-    );
-    expect(claims.every((result) => result.error === null)).toBe(true);
-    const claimed = claims.filter((result) => result.data !== null);
-    expect(claimed).toHaveLength(1);
-    const job = claimed[0]!.data as { claim: string };
-    const params = { p_room_id: roomId, p_round_id: roundId, p_claim: job.claim, p_results: [] };
-    expect((await admin.rpc('complete_geographic_validation', params)).data).toBe(true);
-    expect((await admin.rpc('complete_geographic_validation', params)).data).toBe(false);
-    expect((await gameState(host, roomId)).phase).toBe('REVEAL');
-  });
-
   it('a disconnected participant is required on reconnect, then stops blocking when stale', async () => {
     const { roomId, code, roundId, players } = await playingRoom();
     const [host, guest, disconnected] = players;
@@ -205,6 +172,6 @@ describe.skipIf(!hasLocalSupabase)('STOP / READY multiplayer controls', () => {
       .eq('room_id', roomId)
       .eq('player_id', disconnected!.id);
     await host!.client.rpc('heartbeat', { p_room_id: roomId });
-    expect((await gameState(host!, roomId)).phase).toBe('MAP_VALIDATING');
+    expect((await gameState(host!, roomId)).phase).toBe('REVEAL');
   });
 });

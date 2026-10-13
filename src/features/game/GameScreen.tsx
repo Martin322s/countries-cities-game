@@ -9,7 +9,6 @@ import { Notice } from '@/shared/ui/Notice';
 
 import { useServerNowAt } from './clock/useServerTime';
 import { CountdownScreen } from './components/CountdownScreen';
-import { GeographicValidationScreen } from './components/GeographicValidationScreen';
 import { FinishedScreen } from './components/FinishedScreen';
 import { GameFrame } from './components/GameFrame';
 import { PlayingScreen } from './components/PlayingScreen';
@@ -28,7 +27,6 @@ const SCREEN_GROUP: Record<RoundStage['kind'], string> = {
   playing: 'playing',
   time_up: 'playing',
   results_ready: 'results-ready',
-  map_validating: 'map-validating',
   reveal: 'results',
   results: 'results',
   finished: 'finished',
@@ -109,8 +107,7 @@ export function GameScreen({ room, playerId, live }: GameScreenProps) {
       stage.kind === 'countdown' ||
       stage.kind === 'playing' ||
       stage.kind === 'time_up' ||
-      stage.kind === 'results_ready' ||
-      stage.kind === 'map_validating');
+      stage.kind === 'results_ready');
   if (sittingOut) {
     return frame(
       <div className="flex flex-col items-center gap-3 rounded-panel bg-ink-900/40 glass p-8 text-center">
@@ -157,10 +154,6 @@ export function GameScreen({ room, playerId, live }: GameScreenProps) {
     }
     case 'results_ready':
       return round ? frame(<PostRoundScreen {...shared} round={round} />) : null;
-    case 'map_validating':
-      return round
-        ? frame(<GeographicValidationScreen roomId={room.id} roundId={round.id} />)
-        : null;
     case 'reveal':
     case 'results':
       return round

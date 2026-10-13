@@ -10,7 +10,6 @@ import {
   closeAllClients,
   errorCode,
   gameState,
-  finishValidation,
   hasLocalSupabase,
   localAdmin,
   pollUntil,
@@ -88,7 +87,6 @@ describe.skipIf(!hasLocalSupabase)('a full 28-round game', () => {
       expect(
         resultsReady.map((r) => (r.error ? `${r.error.code}: ${r.error.message}` : 'ok')),
       ).toEqual(roundPlayers.map(() => 'ok'));
-      await finishValidation(roomId, roundId);
       await shiftRound(roundId, ['reveal_at'], 30_000);
       const results = await pollUntil(
         'round reaches RESULTS',

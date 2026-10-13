@@ -55,28 +55,14 @@ isOneToOne: false
       referencedColumns: ["id"]
     }
                   ]
-                },"geographic_validation_cache": {
-                  Row: {
-                    "canonical_name": string,"country_code": string | null,"normalized_name": string,"osm_id": number | null,"osm_type": string | null,"raw_metadata": Json | null,"requested_category": Database["public"]['Enums']["answer_category"],"result": Json,"validated_at": string
-                  }
-                  Insert: {
-                    "canonical_name": string,"country_code"?: string | null,"normalized_name": string,"osm_id"?: number | null,"osm_type"?: string | null,"raw_metadata"?: Json | null,"requested_category": Database["public"]['Enums']["answer_category"],"result": Json,"validated_at"?: string
-                  }
-                  Update: {
-                    "canonical_name"?: string,"country_code"?: string | null,"normalized_name"?: string,"osm_id"?: number | null,"osm_type"?: string | null,"raw_metadata"?: Json | null,"requested_category"?: Database["public"]['Enums']["answer_category"],"result"?: Json,"validated_at"?: string
-                  }
-                  Relationships: []
                 },"answers": {
                   Row: {
-"validation_status": Database["public"]['Enums']["answer_validation_status"],"validation_reason": Database["public"]['Enums']["answer_validation_reason"] | null,"validation_suggestion": string | null,"validated_at": string | null,
                     "category": Database["public"]['Enums']["answer_category"],"invalidated_at": string | null,"invalidated_by": string | null,"normalized_value": string,"player_id": string,"raw_value": string,"round_id": string
                   }
                   Insert: {
-"validation_status"?: Database["public"]['Enums']["answer_validation_status"],"validation_reason"?: Database["public"]['Enums']["answer_validation_reason"] | null,"validation_suggestion"?: string | null,"validated_at"?: string | null,
                     "category": Database["public"]['Enums']["answer_category"],"invalidated_at"?: string | null,"invalidated_by"?: string | null,"normalized_value"?: string,"player_id": string,"raw_value"?: string,"round_id": string
                   }
                   Update: {
-"validation_status"?: Database["public"]['Enums']["answer_validation_status"],"validation_reason"?: Database["public"]['Enums']["answer_validation_reason"] | null,"validation_suggestion"?: string | null,"validated_at"?: string | null,
                     "category"?: Database["public"]['Enums']["answer_category"],"invalidated_at"?: string | null,"invalidated_by"?: string | null,"normalized_value"?: string,"player_id"?: string,"raw_value"?: string,"round_id"?: string
                   }
                   Relationships: [
@@ -164,16 +150,13 @@ isOneToOne: false
     }
                   ]
                 },"rounds": {
-                  Row: { "validation_attempts": number,
-"validation_started_at": string | null,"validation_finished_at": string | null,"validation_claim": string | null,"validation_claimed_at": string | null,
+                  Row: {
                     "countdown_at": string | null,"created_at": string,"ends_at": string | null,"id": string,"letter": string | null,"lock_reason": Database["public"]['Enums']["round_lock_reason"] | null,"locked_at": string | null,"reveal_at": string | null,"room_id": string,"round_number": number,"started_at": string | null
                   }
-                  Insert: { "validation_attempts"?: number,
-"validation_started_at"?: string | null,"validation_finished_at"?: string | null,"validation_claim"?: string | null,"validation_claimed_at"?: string | null,
+                  Insert: {
                     "countdown_at"?: string | null,"created_at"?: string,"ends_at"?: string | null,"id"?: string,"letter"?: string | null,"lock_reason"?: Database["public"]['Enums']["round_lock_reason"] | null,"locked_at"?: string | null,"reveal_at"?: string | null,"room_id": string,"round_number": number,"started_at"?: string | null
                   }
-                  Update: { "validation_attempts"?: number,
-"validation_started_at"?: string | null,"validation_finished_at"?: string | null,"validation_claim"?: string | null,"validation_claimed_at"?: string | null,
+                  Update: {
                     "countdown_at"?: string | null,"created_at"?: string,"ends_at"?: string | null,"id"?: string,"letter"?: string | null,"lock_reason"?: Database["public"]['Enums']["round_lock_reason"] | null,"locked_at"?: string | null,"reveal_at"?: string | null,"room_id"?: string,"round_number"?: number,"started_at"?: string | null
                   }
                   Relationships: [
@@ -222,9 +205,6 @@ isOneToOne: false
             [_ in never]: never
           }
           Functions: {
-claim_geographic_validation: { Args: { p_room_id: string; p_round_id: string }; Returns: Json },
-release_geographic_validation: { Args: { p_round_id: string; p_claim: string }; Returns: undefined },
-complete_geographic_validation: { Args: { p_room_id: string; p_round_id: string; p_claim: string; p_results: Json }; Returns: boolean },
             "advance_game":
 { Args: { "p_room_id": string }; Returns: undefined
                            },
@@ -402,9 +382,7 @@ complete_geographic_validation: { Args: { p_room_id: string; p_round_id: string;
                            }
           }
           Enums: {
-answer_validation_status: 'PENDING' | 'VALID' | 'INVALID',
-answer_validation_reason: 'WRONG_LETTER' | 'MISSPELLING' | 'DOES_NOT_EXIST' | 'WRONG_CATEGORY' | 'AMBIGUOUS',
-            "answer_category": "country"|"city"|"village"|"animal"|"plant"|"object"|"name","game_phase": "LOBBY"|"ROUND_WAITING"|"COUNTDOWN"|"PLAYING"|"ROUND_LOCKED"|"RESULTS_READY"|"MAP_VALIDATING"|"REVEAL"|"RESULTS"|"FINISHED","invalidation_action": "invalidate"|"restore","member_left_reason": "left"|"expired","ready_stage": "pre_round"|"pre_results","round_lock_reason": "all_ready"|"timeout"|"stop","sheet_lock_reason": "ready"|"left"|"tab_exit","visibility_end_reason": "returned"|"round_ended"|"answers_locked","visibility_source": "visibility"|"blur"|"presence"|"unload"
+            "answer_category": "country"|"city"|"village"|"animal"|"plant"|"object"|"name","game_phase": "LOBBY"|"ROUND_WAITING"|"COUNTDOWN"|"PLAYING"|"ROUND_LOCKED"|"RESULTS_READY"|"REVEAL"|"RESULTS"|"FINISHED","invalidation_action": "invalidate"|"restore","member_left_reason": "left"|"expired","ready_stage": "pre_round"|"pre_results","round_lock_reason": "all_ready"|"timeout"|"stop","sheet_lock_reason": "ready"|"left"|"tab_exit","visibility_end_reason": "returned"|"round_ended"|"answers_locked","visibility_source": "visibility"|"blur"|"presence"|"unload"
           }
           CompositeTypes: {
             [_ in never]: never
@@ -520,9 +498,7 @@ export type CompositeTypes<
 export const Constants = {
   "public": {
           Enums: {
-answer_validation_status: ['PENDING', 'VALID', 'INVALID'],
-answer_validation_reason: ['WRONG_LETTER', 'MISSPELLING', 'DOES_NOT_EXIST', 'WRONG_CATEGORY', 'AMBIGUOUS'],
-            "answer_category": ["country", "city", "village", "animal", "plant", "object", "name"],"game_phase": ["LOBBY", "ROUND_WAITING", "COUNTDOWN", "PLAYING", "ROUND_LOCKED", "RESULTS_READY", "MAP_VALIDATING", "REVEAL", "RESULTS", "FINISHED"],"invalidation_action": ["invalidate", "restore"],"member_left_reason": ["left", "expired"],"ready_stage": ["pre_round", "pre_results"],"round_lock_reason": ["all_ready", "timeout", "stop"],"sheet_lock_reason": ["ready", "left", "tab_exit"],"visibility_end_reason": ["returned", "round_ended", "answers_locked"],"visibility_source": ["visibility", "blur", "presence", "unload"]
+            "answer_category": ["country", "city", "village", "animal", "plant", "object", "name"],"game_phase": ["LOBBY", "ROUND_WAITING", "COUNTDOWN", "PLAYING", "ROUND_LOCKED", "RESULTS_READY", "REVEAL", "RESULTS", "FINISHED"],"invalidation_action": ["invalidate", "restore"],"member_left_reason": ["left", "expired"],"ready_stage": ["pre_round", "pre_results"],"round_lock_reason": ["all_ready", "timeout", "stop"],"sheet_lock_reason": ["ready", "left", "tab_exit"],"visibility_end_reason": ["returned", "round_ended", "answers_locked"],"visibility_source": ["visibility", "blur", "presence", "unload"]
           }
         }
 } as const

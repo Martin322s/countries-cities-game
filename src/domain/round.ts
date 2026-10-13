@@ -29,7 +29,6 @@ export type RoundStage =
   /** ends_at has passed; the server will persist the lock on its next request. */
   | { kind: 'time_up' }
   | { kind: 'results_ready' }
-  | { kind: 'map_validating' }
   | { kind: 'reveal' }
   | { kind: 'results' }
   | { kind: 'finished' };
@@ -64,8 +63,6 @@ export function deriveRoundStage(
     case 'ROUND_LOCKED':
     case 'RESULTS_READY':
       return { kind: 'results_ready' };
-    case 'MAP_VALIDATING':
-      return { kind: 'map_validating' };
     case 'REVEAL':
       // The server moves REVEAL → RESULTS lazily; the screen does not wait for it.
       return timeline?.revealAt != null && serverNow >= timeline.revealAt + REVEAL_DURATION_MS

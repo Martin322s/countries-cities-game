@@ -5,7 +5,7 @@ import { CATEGORY_IDS } from './categories';
  * the estimated server time onto this timeline, so all screens reveal the same
  * category at the same moment, and a refresh resumes at the right point.
  *
- *   0 ms      suspense: "ПРОВЕРЯВАМЕ ОТГОВОРИТЕ..."
+ *   0 ms      suspense before the results reveal
  *   2000 ms   table appears, all cells concealed
  *   2600 ms   category 1 (Държава) revealed, then one category per second
  *   9600 ms   round totals revealed (count-up)

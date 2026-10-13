@@ -18,7 +18,6 @@ describe('game phase state machine', () => {
       'PLAYING',
       'ROUND_LOCKED',
       'RESULTS_READY',
-      'MAP_VALIDATING',
       'REVEAL',
       'RESULTS',
       'ROUND_WAITING',
@@ -28,10 +27,15 @@ describe('game phase state machine', () => {
     }
   });
 
+  it('starts the reveal immediately after the results ready check', () => {
+    expect(canTransition('RESULTS_READY', 'REVEAL')).toBe(true);
+  });
+
   it('rejects skipping phases', () => {
     expect(canTransition('ROUND_WAITING', 'PLAYING')).toBe(false);
     expect(canTransition('PLAYING', 'RESULTS')).toBe(false);
     expect(canTransition('LOBBY', 'RESULTS')).toBe(false);
+    expect(canTransition('RESULTS_READY', 'REVEAL')).toBe(true);
     expect(canTransition('RESULTS_READY', 'RESULTS')).toBe(false);
   });
 

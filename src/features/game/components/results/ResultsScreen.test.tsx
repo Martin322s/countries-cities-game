@@ -188,7 +188,7 @@ describe('ResultsScreen reveal', () => {
     vi.mocked(resultsApi.fetchRoundResults).mockResolvedValue(results(NOW));
     const audio = audioSpy();
     renderResults(TEST_PLAYER_ID, { audio });
-    expect(await screen.findByText('ПРОВЕРЯВАМЕ ОТГОВОРИТЕ')).toBeInTheDocument();
+    expect(await screen.findByText('РЕЗУЛТАТИТЕ СЕ РАЗКРИВАТ')).toBeInTheDocument();
     // The live reveal speaks once: one suspense cue for this round.
     await vi.waitFor(() => {
       expect(audio.cue).toHaveBeenCalledWith(
@@ -340,7 +340,7 @@ describe('ResultsScreen final results', () => {
     await user.click(within(table()).getByRole('button', { name: /Стоян, Животно: Мечка/ }));
     const dialog = screen.getByRole('dialog', { name: 'Стоян · Животно' });
     expect(within(dialog).getByRole('region', { name: 'Причина за анулиране' })).toHaveTextContent(
-      'няма записана конкретна причина',
+      'Конкретно обяснение не е записано',
     );
     expect(within(dialog).queryByRole('button', { name: 'ВЪЗСТАНОВИ ОТГОВОРА' })).toBeNull();
     expect(within(dialog).queryByRole('button', { name: 'ОТБЕЛЕЖИ КАТО НЕВАЛИДЕН' })).toBeNull();
@@ -375,7 +375,7 @@ describe('ResultsScreen final results', () => {
     await user.click(within(stoyan).getByRole('button', { name: /Стоян, Животно: Мечка/ }));
     const dialog = screen.getByRole('dialog', { name: 'Стоян · Животно' });
     expect(within(dialog).getByRole('region', { name: 'Причина за анулиране' })).toHaveTextContent(
-      'няма записана конкретна причина',
+      'Конкретно обяснение не е записано',
     );
     await user.click(within(dialog).getByRole('button', { name: 'ВЪЗСТАНОВИ ОТГОВОРА' }));
     expect(resultsApi.setAnswerInvalidated).toHaveBeenCalledWith(

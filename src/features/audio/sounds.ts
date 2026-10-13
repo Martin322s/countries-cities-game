@@ -17,7 +17,7 @@ export const SOUND_IDS = [
   'ready',
   /** Everyone locked early — the round ended before the timer. */
   'all-ready',
-  /** "ПРОВЕРЯВАМЕ ОТГОВОРИТЕ..." */
+  /** A brief pause before the results reveal. */
   'suspense',
   /** A category column reveals; the variant follows the current player's own cell. */
   'reveal-unique',

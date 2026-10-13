@@ -11,7 +11,6 @@ import {
   closeAllClients,
   errorCode,
   gameState,
-  finishValidation,
   hasLocalSupabase,
   localAdmin,
   pollUntil,
@@ -50,7 +49,6 @@ async function roomIn(
     | 'COUNTDOWN'
     | 'PLAYING'
     | 'RESULTS_READY'
-    | 'MAP_VALIDATING'
     | 'REVEAL'
     | 'RESULTS',
 ) {
@@ -78,8 +76,6 @@ async function roomIn(
   );
   if (phase === 'RESULTS_READY') return { roomId, players, roundId };
   await Promise.all(players.map((p) => p.client.rpc('set_results_ready', { p_room_id: roomId })));
-  if (phase === 'MAP_VALIDATING') return { roomId, players, roundId };
-  await finishValidation(roomId, roundId);
   if (phase === 'REVEAL') return { roomId, players, roundId };
   await shiftRound(roundId, ['reveal_at'], 30_000);
   await host.client.rpc('heartbeat', { p_room_id: roomId });
@@ -144,7 +140,6 @@ describe.skipIf(!hasLocalSupabase)('concurrency: duplicate and racing requests',
       ),
     );
     expect(ready.map(errorCode).every((c) => c === 'ok')).toBe(true);
-    await finishValidation(roomId, roundId!);
     const revealed = await roundRow(roundId!);
     expect(revealed.reveal_at).not.toBeNull();
     // reveal_at was set once: it does not move on further requests.
@@ -331,7 +326,6 @@ describe.skipIf(!hasLocalSupabase)('host disappears in every phase', () => {
       await Promise.all(
         players.map((p) => p.client.rpc('set_results_ready', { p_room_id: roomId })),
       );
-      await finishValidation(roomId, roundId);
       await shiftRound(roundId, ['reveal_at'], 30_000);
       await pollUntil(
         `round ${String(round)} results`,

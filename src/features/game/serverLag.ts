@@ -19,7 +19,6 @@ export function isServerBehind(state: GameState, stage: RoundStage): boolean {
     case 'waiting':
     case 'countdown':
     case 'results_ready':
-    case 'map_validating':
     case 'reveal':
     case 'finished':
       return false;

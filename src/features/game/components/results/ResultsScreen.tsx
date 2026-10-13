@@ -114,7 +114,7 @@ export function ResultsScreen({
       <>
         <SuspenseOverlay />
         <p role="status" className="py-16 text-center text-fg-muted">
-          Проверяваме отговорите...
+          Подготвяме резултатите...
         </p>
       </>
     );
@@ -129,7 +129,7 @@ export function ResultsScreen({
     isHistorical || !reveal.complete
       ? isHistorical
         ? `Преглеждаш предишен рунд ${round.number}.`
-        : 'Проверяваме отговорите...'
+        : 'Резултатите се разкриват...'
       : `Резултатите са готови.${me && myStanding ? ` Имаш ${me.roundPoints} точки в този рунд и ${myStanding.totalPoints} общо.` : ''}`;
 
   return (

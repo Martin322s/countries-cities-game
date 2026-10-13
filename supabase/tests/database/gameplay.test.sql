@@ -9,7 +9,6 @@ begin;
 create extension if not exists pgtap with schema extensions;
 
 select no_plan();
-\ir ../helpers/geographic_validation.sql
 
 insert into auth.users (id, aud, role, is_anonymous)
 values
@@ -295,10 +294,7 @@ select lives_ok(format($$ select public.set_results_ready(%L) $$, current_settin
 select lives_ok(format($$ select public.set_results_ready(%L) $$, current_setting('test.room1')), 'a late retry succeeds silently');
 set local role postgres;
 select is((select phase::text from public.rooms where id = current_setting('test.room1')::uuid),
-  'MAP_VALIDATING', 'everyone ready starts geographic validation');
-select pg_temp.finish_validation(current_setting('test.room1')::uuid);
-select is((select phase::text from public.rooms where id = current_setting('test.room1')::uuid),
-  'REVEAL', 'trusted validation completes before reveal');
+  'REVEAL', 'everyone ready starts the results reveal');
 select is((select count(*) from public.ready_checks where round_id = current_setting('test.round1')::uuid and stage = 'pre_results'),
   2::bigint, 'one results-ready row per confirming participant');
 

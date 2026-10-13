@@ -8,7 +8,6 @@ begin;
 create extension if not exists pgtap with schema extensions;
 
 select no_plan();
-\ir ../helpers/geographic_validation.sql
 
 insert into auth.users (id, aud, role, is_anonymous)
 values
@@ -87,7 +86,6 @@ begin
     perform public.set_results_ready(pg_temp.room());
     perform pg_temp.as_admin();
   end loop;
-  perform pg_temp.finish_validation(pg_temp.room());
   return v_round;
 end;
 $$;

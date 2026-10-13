@@ -61,7 +61,6 @@ begin
     perform public.set_results_ready(pg_temp.room());
     perform pg_temp.as_admin();
   end loop;
-  perform pg_temp.finish_validation(pg_temp.room());
   update public.rounds set reveal_at = reveal_at - interval '12 seconds' where id = pg_temp.current_round();
   perform public.advance_game(pg_temp.room());
 end;
