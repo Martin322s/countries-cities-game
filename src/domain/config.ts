@@ -6,7 +6,7 @@ export const MIN_PLAYERS = 2;
 export const MAX_PLAYERS = 15;
 
 /** Hard upper bound for the answering phase of a single round. */
-export const ROUND_DURATION_MS = 60 * 1000;
+export const ROUND_DURATION_MS = 90 * 1000;
 
 /**
  * Length of the "get ready" countdown shown before the letter is revealed.

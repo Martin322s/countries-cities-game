@@ -120,7 +120,7 @@ select ok((select letter = any (public.eligible_letters()) from public.rounds wh
 select is((select started_at - countdown_at from public.rounds where id = current_setting('test.round1')::uuid),
   interval '3 seconds', 'countdown lasts 3 seconds of server time');
 select is((select ends_at - started_at from public.rounds where id = current_setting('test.round1')::uuid),
-  interval '60 seconds', 'the round lasts 60 seconds of server time');
+  interval '90 seconds', 'the round lasts 90 seconds of server time');
 select is((select cardinality(used_letters) from public.rooms where id = current_setting('test.room1')::uuid),
   0, 'used_letters (broadcast over realtime) stays empty during the countdown');
 

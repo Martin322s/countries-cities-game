@@ -11,6 +11,7 @@ import {
 } from '@/domain';
 import { useCue } from '@/features/audio/gameAudio';
 import { roomErrorMessage } from '@/features/rooms/api/roomErrors';
+import { RoomChat } from '@/features/rooms/components/RoomChat';
 import { cn } from '@/shared/lib/cn';
 import { Button } from '@/shared/ui/Button';
 import { BanIcon, CheckIcon, DuplicateIcon } from '@/shared/ui/icons';
@@ -253,6 +254,10 @@ export function ResultsScreen({
           players={players}
           immutable={isHistorical || phase === 'FINISHED'}
         />
+      ) : null}
+
+      {!isHistorical && reveal.complete && me ? (
+        <RoomChat roomId={roomId} playerId={playerId} playerName={me.displayName} />
       ) : null}
 
       {variant === 'live' && !isHistorical && reveal.complete ? (

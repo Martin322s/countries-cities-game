@@ -7,6 +7,7 @@ import { useNow } from '@/features/presence/useNow';
 import type { RoomConnection } from '@/features/presence/useRoomConnection';
 import type { RoomSummary } from '@/features/rooms/api/roomsApi';
 import { useRoomMembers } from '@/features/rooms/hooks/useRoomQueries';
+import { RoomChat } from '@/features/rooms/components/RoomChat';
 import { Notice } from '@/shared/ui/Notice';
 
 import { buildLobbyPlayers } from '../lobbyModel';
@@ -72,6 +73,12 @@ export function LobbyView({ room, playerId, live }: LobbyViewProps) {
       ) : null}
 
       <RoomCodeCard code={room.code} />
+
+      <RoomChat
+        roomId={room.id}
+        playerId={playerId}
+        playerName={members.data?.find((member) => member.id === playerId)?.displayName ?? ''}
+      />
 
       <div className="flex flex-col gap-6 rounded-panel bg-ink-900/40 glass p-5 sm:p-7">
         <PlayerList players={players} capacity={room.capacity} />

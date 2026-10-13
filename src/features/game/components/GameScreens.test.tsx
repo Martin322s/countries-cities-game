@@ -337,13 +337,13 @@ describe('PlayingScreen', () => {
     expect(within(list).getByText('Деси').closest('li')).toHaveTextContent('Готов');
   });
 
-  it('flushes pending edits before sending STOP', async () => {
+  it('flushes pending edits before marking answers ready', async () => {
     pinServerClock(Date.now());
     const user = userEvent.setup();
     renderPlaying();
     const country = await screen.findByLabelText('Държава');
     await user.type(country, 'Малта');
-    await user.click(screen.getByRole('button', { name: 'СТОП' }));
+    await user.click(screen.getByRole('button', { name: 'ГОТОВ' }));
 
     await vi.waitFor(() => {
       expect(gameApi.lockAnswers).toHaveBeenCalledWith(roomId, 'round-1');
@@ -366,7 +366,7 @@ describe('PlayingScreen', () => {
     expect(city).toHaveAttribute('readonly');
     expect(screen.getByText('ГОТОВ СИ')).toBeVisible();
     expect(screen.getByText(/Изчакваме останалите/)).toBeVisible();
-    expect(screen.getByRole('button', { name: 'СТОП' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'СТОП' })).not.toBeInTheDocument();
   });
 
   it('locks every input the moment time is up', async () => {

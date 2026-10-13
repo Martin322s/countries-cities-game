@@ -133,7 +133,6 @@ function AnswerSheet({
   });
   const lock = useLockAnswers(roomId);
   const [locking, setLocking] = useState(false);
-  const [stopped, setStopped] = useState(false);
   const readyRef = useRef<HTMLButtonElement>(null);
   const now = useServerNowAt(startedAt + LETTER_REVEAL_MS, endsAt - FINAL_FLUSH_BEFORE_MS);
   const statusNow = useServerNowEvery(5_000);
@@ -156,7 +155,7 @@ function AnswerSheet({
       exitRef.current = null;
     };
   }, [exitRef, close, snapshot]);
-  const roundClosed = stopped || timeUp || round.timeline.lockedAt !== null;
+  const roundClosed = timeUp || round.timeline.lockedAt !== null;
   const locked = myLocked || tabLocked || roundClosed;
 
   // Last chance to persist edits before the server deadline.
@@ -179,7 +178,6 @@ function AnswerSheet({
       }
       await lock.mutateAsync(round.id);
       close();
-      setStopped(true);
       audio.cue(readyCue(round.id));
     } catch {
       // Shown via lock.error.
@@ -272,7 +270,7 @@ function AnswerSheet({
             loading={locking}
             onClick={() => void lockAnswers()}
           >
-            СТОП
+            ГОТОВ
           </Button>
         ) : null}
         <p

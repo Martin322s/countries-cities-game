@@ -17,7 +17,7 @@ select throws_ok($$ select pg_temp.report('00000000-0000-0000-0000-0000000000b2'
 select pg_temp.ready_all();
 select throws_ok($$ select pg_temp.report('00000000-0000-0000-0000-0000000000b2', false) $$,
   'P0001', 'wrong_phase', 'no lock during countdown');
-select is(public.round_duration(), interval '60 seconds', 'server duration is 60 seconds');
+select is(public.round_duration(), interval '90 seconds', 'server duration is 90 seconds');
 select pg_temp.shift(interval '10 seconds');
 select pg_temp.as_user('00000000-0000-0000-0000-0000000000b2');
 select is(public.report_visibility(pg_temp.room(), pg_temp.current_round(), false, false,
