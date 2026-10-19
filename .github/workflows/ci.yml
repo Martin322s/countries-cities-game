@@ -1,0 +1,88 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Fast, credential-free checks on every change.
+  quality:
+    name: Typecheck · lint · format · unit tests · build · audits
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install (lockfile, deterministic)
+        run: npm ci
+
+      - name: Typecheck, lint, format check, unit/component tests
+        run: npm run check
+
+      - name: Production build
+        # Public placeholders only — real values come from the hosting provider.
+        env:
+          VITE_SUPABASE_URL: https://ci-placeholder.supabase.co
+          VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+        run: npm run build
+
+      - name: Secret scan (repository and build output)
+        run: npm run scan:secrets
+
+      - name: Dependency audit (high and critical)
+        run: npm run audit:deps
+
+  # The real database: migrations from scratch, schema lint, pgTAP, integration tests.
+  database:
+    name: Supabase · migrations · pgTAP · integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Start local Supabase (Docker)
+        run: npm run db:start
+
+      - name: Point the integration tests at the local stack
+        run: |
+          npx supabase status -o env \
+            | grep -E '^(API_URL|PUBLISHABLE_KEY)=' \
+            | sed -e 's/^API_URL=/VITE_SUPABASE_URL=/' -e 's/^PUBLISHABLE_KEY=/VITE_SUPABASE_PUBLISHABLE_KEY=/' \
+            > .env.local
+
+      - name: Clean reset from migrations
+        run: npm run db:reset
+
+      - name: Schema lint (plpgsql_check)
+        run: npm run db:lint
+
+      - name: pgTAP
+        run: npm run db:test
+
+      - name: Integration tests
+        run: npm run test:integration
+
+      - name: Stop Supabase
+        if: always()
+        run: npm run db:stop
