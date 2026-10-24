@@ -1,7 +1,7 @@
 # Държави и градове
 
 A real-time multiplayer web version of the Bulgarian party game **"Държави и градове"**
-("Countries and Cities") for 2–15 players. Each round a random Bulgarian letter is
+("Countries and Cities") for 2–20 players. Each round a random Bulgarian letter is
 drawn, and every player has 60 seconds to write a country, city, village, animal,
 plant, object and name starting with that letter. Unique answers score.
 

@@ -46,7 +46,7 @@ integration tests only, it also raises the anonymous sign-in rate limit to 1000 
 ## Data model (rooms & lobby)
 
 `rooms`
-: `code` (unique, 5 chars from `ABCDEFGHJKMNPQRSTUVWXYZ23456789`), `capacity` (2–15,
+: `code` (unique, 5 chars from `ABCDEFGHJKMNPQRSTUVWXYZ23456789`), `capacity` (2–20,
 immutable), `phase` (`game_phase` enum), `host_player_id` (a deferrable FK to a member
 row: exactly one host, always a member).
 
@@ -66,7 +66,7 @@ as `MESSAGE = <code>, HINT = 'app_error'`.
 
 | Function                      | Validates                                                                                                                                                     | Error codes                                                                                                                         |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `create_room(name, capacity)` | signed in, name 1–20, capacity 2–15                                                                                                                           | `not_authenticated`, `invalid_display_name`, `invalid_capacity`, `room_code_unavailable`                                            |
+| `create_room(name, capacity)` | signed in, name 1–20, capacity 2–20                                                                                                                           | `not_authenticated`, `invalid_display_name`, `invalid_capacity`, `room_code_unavailable`                                            |
 | `join_room(code, name)`       | code format, room exists (unknown code → returns NULL, counted against the guessing limit), rejoin first, then phase = LOBBY, name, capacity, name uniqueness | `invalid_room_code`, `rate_limited`, `room_finished`, `game_in_progress`, `room_full`, `display_name_taken`, `invalid_display_name` |
 | `leave_room(room_id)`         | caller is an active member                                                                                                                                    | `not_member`                                                                                                                        |
 | `heartbeat(room_id)`          | caller is an active member                                                                                                                                    | `not_member`                                                                                                                        |

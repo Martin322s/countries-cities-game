@@ -3,7 +3,7 @@
  * and keep the database CHECK constraints in `supabase/migrations` in sync.
  */
 export const MIN_PLAYERS = 2;
-export const MAX_PLAYERS = 15;
+export const MAX_PLAYERS = 20;
 
 /** Hard upper bound for the answering phase of a single round. */
 export const ROUND_DURATION_MS = 90 * 1000;

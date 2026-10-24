@@ -45,8 +45,8 @@ select throws_ok($$ select public.create_room(repeat('Я', 21), 4) $$, 'P0001', 
   'display name over 20 characters is rejected');
 select throws_ok($$ select public.create_room('Стоян', 1) $$, 'P0001', 'invalid_capacity',
   'capacity below 2 is rejected');
-select throws_ok($$ select public.create_room('Стоян', 16) $$, 'P0001', 'invalid_capacity',
-  'capacity above 15 is rejected');
+select throws_ok($$ select public.create_room('Стоян', 21) $$, 'P0001', 'invalid_capacity',
+  'capacity above 20 is rejected');
 
 select set_config('test.code', public.create_room('  Стоян  ', 3), true);
 select matches(current_setting('test.code'), '^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{5}$',

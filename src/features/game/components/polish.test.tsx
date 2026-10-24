@@ -192,7 +192,7 @@ function result(index: number, name: string): PlayerResult {
   };
 }
 
-describe('15 players and long text', () => {
+describe('20 players and long text', () => {
   const longName = 'Я'.repeat(DISPLAY_NAME_MAX_LENGTH);
   const players = Array.from({ length: MAX_PLAYERS }, (_, i) =>
     result(i, i === 0 ? longName : `Играч ${String(i + 1)}`),
@@ -227,7 +227,7 @@ describe('15 players and long text', () => {
     expect(points).toHaveTextContent('1');
   });
 
-  it('ranks a 15-player leaderboard with stable, shared ranks', () => {
+  it('ranks a 20-player leaderboard with stable, shared ranks', () => {
     const entries = rankLeaderboard(
       players.map((p) => ({
         playerId: p.playerId,

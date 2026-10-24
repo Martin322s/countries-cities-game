@@ -36,7 +36,7 @@ describe('LandingPage', () => {
   it('shows the title, player range and both primary actions', () => {
     setup();
     expect(screen.getByRole('heading', { level: 1, name: /Държави\s*и градове/ })).toBeVisible();
-    expect(screen.getByText('От 2 до 15 играчи')).toBeVisible();
+    expect(screen.getByText('От 2 до 20 играчи')).toBeVisible();
     expect(screen.getByRole('button', { name: 'СЪЗДАЙ СТАЯ' })).toBeVisible();
     expect(screen.getByRole('button', { name: 'ВЛЕЗ В СТАЯ' })).toBeVisible();
   });
@@ -107,7 +107,7 @@ describe('LandingPage', () => {
     expect(within(dialog).getByRole('button', { name: 'Свързване...' })).toBeDisabled();
   });
 
-  it('keeps room capacity within 2–15', async () => {
+  it('keeps room capacity within 2–20', async () => {
     const { user } = setup();
     await user.click(screen.getByRole('button', { name: 'СЪЗДАЙ СТАЯ' }));
     const dialog = screen.getByRole('dialog', { name: 'Нова стая' });
@@ -117,7 +117,7 @@ describe('LandingPage', () => {
       if (increase.hasAttribute('disabled')) break;
       await user.click(increase);
     }
-    expect(within(dialog).getByRole('slider')).toHaveValue('15');
+    expect(within(dialog).getByRole('slider')).toHaveValue('20');
     expect(increase).toBeDisabled();
   });
 

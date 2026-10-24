@@ -1,5 +1,5 @@
 /**
- * Realistic 15-player workload (Web v1.0): joins, ready, staggered autosave bursts of
+ * Realistic 20-player workload (Web v1.0): joins, ready, staggered autosave bursts of
  * seven fields per player, locks, reveal, concurrent result reads, invalidation,
  * fair-play events, a reconnect and the next round. Measures request latency per RPC
  * and verifies the authoritative scoring exactly against the domain implementation —
@@ -28,7 +28,7 @@ import {
   shiftRound,
 } from './helpers';
 
-const PLAYERS = 15;
+const PLAYERS = 20;
 const timings = new Map<string, number[]>();
 
 async function timed<T extends { error: { message: string } | null }>(
@@ -86,14 +86,14 @@ function plannedAnswers(index: number): Partial<Record<CategoryId, string>> {
   return answers;
 }
 
-describe.skipIf(!hasLocalSupabase)('15-player load and full round', () => {
+describe.skipIf(!hasLocalSupabase)('20-player load and full round', () => {
   afterAll(async () => {
     await closeAllClients();
     // Measurement output for the release notes (not an error).
-    console.warn(`\n15-player workload latencies (local stack):\n${report()}`);
+    console.warn(`\n20-player workload latencies (local stack):\n${report()}`);
   });
 
-  it('plays a full, realistic 15-player round with exact authoritative scoring', async () => {
+  it('plays a full, realistic 20-player round with exact authoritative scoring', async () => {
     const { roomId, players } = await roomWith(PLAYERS);
     const host = players[0]!;
     const admin = await localAdmin();
@@ -119,7 +119,7 @@ describe.skipIf(!hasLocalSupabase)('15-player load and full round', () => {
     await shiftRound(roundId, ['countdown_at', 'started_at', 'ends_at'], 30_000);
 
     // Staggered typing: per field, a few progressively longer autosaves 500 ms apart
-    // (the client's debounce) — 15 players at the same time.
+    // (the client's debounce) — 20 players at the same time.
     await Promise.all(
       players.map(async (p, index) => {
         const planned = plannedAnswers(index);
@@ -294,7 +294,7 @@ describe.skipIf(!hasLocalSupabase)('15-player load and full round', () => {
       new Map([['object', new Set([players[7]!.id as PlayerId])]]),
     );
 
-    // Next round: a fresh snapshot of all 15.
+    // Next round: a fresh snapshot of all 20.
     expect(
       errorCode(
         await timed('start_next_round', () =>

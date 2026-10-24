@@ -149,7 +149,7 @@ export function roomErrorMessage(code: RoomErrorCode, operation: RoomOperation):
     case 'invalid_display_name':
       return 'Името трябва да е между 1 и 20 символа.';
     case 'invalid_capacity':
-      return 'Броят играчи трябва да е между 2 и 15.';
+      return 'Броят играчи трябва да е между 2 и 20.';
     case 'not_member':
       return 'Вече не си в тази стая.';
     case 'not_authenticated':
