@@ -151,7 +151,10 @@ export function ResultsTable({
                         revealed={revealed}
                         staggerIndex={rowIndex}
                         animate={live && revealed && index === revealedCategories - 1}
-                        {...(onSelectCell && revealed && cell.state !== 'empty' && cell.state !== 'wrong_letter'
+                        {...(onSelectCell &&
+                        revealed &&
+                        cell.state !== 'empty' &&
+                        cell.state !== 'wrong_letter'
                           ? {
                               onSelect: () => {
                                 onSelectCell(player, cell);

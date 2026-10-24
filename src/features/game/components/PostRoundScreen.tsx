@@ -50,7 +50,7 @@ export function PostRoundScreen({
           </span>
         ) : null}
         <h1 className="mt-2 font-display text-3xl font-black sm:text-4xl">
-          {round.lockReason === 'timeout' ? 'ВРЕМЕТО ИЗТЕЧЕ' : 'ВСИЧКИ СА ГОТОВИ'}
+          {round.lockReason === 'timeout' ? 'ВРЕМЕТО ИЗТЕЧЕ' : 'РУНДЪТ ПРИКЛЮЧИ'}
         </h1>
         <p className="text-fg-muted">
           Отговорите са заключени. Когато всички са готови, започва проверката.
@@ -92,7 +92,7 @@ export function PostRoundScreen({
             ready.mutate(undefined);
           }}
         >
-          ГОТОВ ЗА РЕЗУЛТАТИТЕ
+          ГОТОВ
         </Button>
       )}
     </div>

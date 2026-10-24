@@ -1,4 +1,4 @@
-import { act, screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -78,6 +78,7 @@ function setVisibility(next: DocumentVisibilityState) {
 }
 
 beforeEach(() => {
+  sessionStorage.clear();
   resetServerClock();
   const local = Date.now();
   recordClockSample({ serverMs: local, requestStart: local, requestEnd: local });
@@ -132,12 +133,11 @@ const reports = () =>
     .mock.calls.map(([input]) => (input.visible ? 'return' : 'away'));
 
 describe('visibility reporting during PLAYING', () => {
-  it('reports away when the page is hidden and a return when it is back', async () => {
+  it('locks on tab exit, sends one snapshot and stays locked on return', async () => {
     renderPlaying();
     await screen.findByLabelText('Държава');
-    await vi.waitFor(() => {
-      expect(reports()).toEqual(['return']); // mount: closes anything left open
-    });
+    fireEvent.change(screen.getByLabelText('Държава'), { target: { value: 'Малта' } });
+    expect(reports()).toEqual([]);
     act(() => {
       setVisibility('hidden');
     });
@@ -145,15 +145,21 @@ describe('visibility reporting during PLAYING', () => {
       setVisibility('visible');
     });
     await vi.waitFor(() => {
-      expect(reports()).toEqual(['return', 'away', 'return']);
+      expect(reports()).toEqual(['away']);
     });
-    expect(vi.mocked(activityApi.reportVisibility).mock.calls[1]?.[0]).toMatchObject({
+    for (const input of screen.getAllByRole('textbox')) expect(input).toHaveAttribute('readonly');
+    expect(screen.getByText(/Полетата ви са заключени до края на този рунд/)).toBeVisible();
+    expect(vi.mocked(activityApi.reportVisibility).mock.calls[0]?.[0]).toMatchObject({
       roomId,
       roundId,
       visible: false,
       unloading: false,
       accessToken: 'token-1',
     });
+    expect(vi.mocked(activityApi.reportVisibility).mock.calls[0]?.[0].answers?.country).toBe(
+      'Малта',
+    );
+    expect(gameApi.saveAnswers).not.toHaveBeenCalled();
   });
 
   it('stops monitoring once the player locked their answers (READY)', async () => {
@@ -167,6 +173,87 @@ describe('visibility reporting during PLAYING', () => {
     });
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(activityApi.reportVisibility).not.toHaveBeenCalled();
+  });
+
+  it('locks on blur immediately and ignores duplicate blur/visibility/focus events', async () => {
+    renderPlaying();
+    await screen.findByLabelText('Държава');
+    act(() => {
+      window.dispatchEvent(new Event('blur'));
+      window.dispatchEvent(new Event('blur'));
+      setVisibility('hidden');
+      setVisibility('visible');
+      window.dispatchEvent(new Event('focus'));
+    });
+    for (const input of screen.getAllByRole('textbox')) expect(input).toHaveAttribute('readonly');
+    await vi.waitFor(() => {
+      expect(reports()).toEqual(['away']);
+    });
+    expect(gameApi.saveAnswers).not.toHaveBeenCalled();
+  });
+
+  it('retries a failed lock with the original snapshot', async () => {
+    vi.mocked(activityApi.reportVisibility).mockRejectedValueOnce(new Error('offline'));
+    renderPlaying();
+    await screen.findByLabelText('Държава');
+    act(() => {
+      window.dispatchEvent(new Event('blur'));
+    });
+    await vi.waitFor(() => {
+      expect(activityApi.reportVisibility).toHaveBeenCalledTimes(1);
+    });
+    await vi.waitFor(
+      () => {
+        expect(activityApi.reportVisibility).toHaveBeenCalledTimes(2);
+      },
+      {
+        timeout: 3_000,
+      },
+    );
+    const calls = vi.mocked(activityApi.reportVisibility).mock.calls;
+    expect(calls[1]?.[0].answers).toEqual(calls[0]?.[0].answers);
+    expect(screen.getByLabelText('Държава')).toHaveAttribute('readonly');
+  });
+
+  it('preserves the locked snapshot after remounting the same round', async () => {
+    const view = renderPlaying();
+    const input = await screen.findByLabelText('Държава');
+    fireEvent.change(input, { target: { value: 'Малта' } });
+    act(() => {
+      window.dispatchEvent(new Event('blur'));
+    });
+    await vi.waitFor(() => {
+      expect(activityApi.reportVisibility).toHaveBeenCalledTimes(1);
+    });
+    view.unmount();
+    renderPlaying();
+    const restored = await screen.findByLabelText('Държава');
+    expect(restored).toHaveValue('Малта');
+    expect(restored).toHaveAttribute('readonly');
+  });
+
+  it('locks even while persisted answers are still loading, without overwriting them', async () => {
+    let resolveAnswers: (answers: { country: string }) => void = () => undefined;
+    vi.mocked(gameApi.fetchOwnAnswers).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveAnswers = resolve;
+      }),
+    );
+    renderPlaying();
+    act(() => {
+      window.dispatchEvent(new Event('blur'));
+    });
+    await vi.waitFor(() => {
+      expect(activityApi.reportVisibility).toHaveBeenCalledTimes(1);
+    });
+    expect(vi.mocked(activityApi.reportVisibility).mock.calls[0]?.[0].answers).toBeUndefined();
+    await act(async () => {
+      resolveAnswers({ country: 'Мароко' });
+      await Promise.resolve();
+    });
+    const restored = await screen.findByLabelText('Държава');
+    expect(restored).toHaveValue('Мароко');
+    expect(restored).toHaveAttribute('readonly');
   });
 });
 

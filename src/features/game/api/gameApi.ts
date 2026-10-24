@@ -60,6 +60,7 @@ export function saveAnswers(
   });
 }
 
+/** STOP: the first accepted request ends answering for every participant. */
 export function lockAnswers(roomId: RoomId, roundId: RoundId): Promise<void> {
   return callBackend(async () => {
     const { error } = await getSupabaseClient().rpc('lock_answers', {

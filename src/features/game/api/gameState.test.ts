@@ -21,7 +21,7 @@ const raw = {
     letter: 'М',
     countdown_at: '2026-01-01T12:00:00Z',
     started_at: '2026-01-01T12:00:03Z',
-    ends_at: '2026-01-01T12:02:03Z',
+    ends_at: '2026-01-01T12:01:03Z',
     locked_at: null,
     lock_reason: null,
   },
@@ -41,13 +41,29 @@ const raw = {
 };
 
 describe('parseGameState', () => {
+  it('accepts synchronized STOP and tab-exit lock reasons', () => {
+    const state = parseGameState({
+      ...raw,
+      phase: 'RESULTS_READY',
+      round: { ...raw.round, lock_reason: 'stop', locked_at: raw.server_now },
+      participants: [
+        {
+          ...raw.participants[0],
+          answers_lock_reason: 'tab_exit',
+          answers_locked_at: raw.server_now,
+        },
+      ],
+    });
+    expect(state.round?.lockReason).toBe('stop');
+    expect(state.participants[0]?.answersLockReason).toBe('tab_exit');
+  });
   it('parses the server read model into typed values', () => {
     const state = parseGameState(raw);
     expect(state.phase).toBe('PLAYING');
     expect(state.serverNow).toBe(Date.parse('2026-01-01T12:00:05.250Z'));
     expect(state.round?.letter).toBe('М');
     const timeline = state.round!.timeline;
-    expect(timeline.endsAt! - timeline.startedAt!).toBe(120_000);
+    expect(timeline.endsAt! - timeline.startedAt!).toBe(60_000);
     expect(state.participants[0]).toMatchObject({ displayName: 'Стоян', roundReady: true });
   });
 

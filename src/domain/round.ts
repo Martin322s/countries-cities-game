@@ -5,7 +5,7 @@ import { REVEAL_DURATION_MS } from './reveal';
 
 /**
  * Authoritative round timeline (epoch ms, server clock). Set by the server when the
- * countdown starts: startedAt = countdownAt + 3 s, endsAt = startedAt + 120 s.
+ * countdown starts: startedAt = countdownAt + 3 s, endsAt = startedAt + 60 s.
  */
 export interface RoundTimeline {
   countdownAt: number | null;
@@ -29,6 +29,7 @@ export type RoundStage =
   /** ends_at has passed; the server will persist the lock on its next request. */
   | { kind: 'time_up' }
   | { kind: 'results_ready' }
+  | { kind: 'ai_validating' }
   | { kind: 'reveal' }
   | { kind: 'results' }
   | { kind: 'finished' };
@@ -63,6 +64,8 @@ export function deriveRoundStage(
     case 'ROUND_LOCKED':
     case 'RESULTS_READY':
       return { kind: 'results_ready' };
+    case 'AI_VALIDATING':
+      return { kind: 'ai_validating' };
     case 'REVEAL':
       // The server moves REVEAL → RESULTS lazily; the screen does not wait for it.
       return timeline?.revealAt != null && serverNow >= timeline.revealAt + REVEAL_DURATION_MS
@@ -100,7 +103,7 @@ export interface RoundParticipant {
   left: boolean;
   roundReady: boolean;
   answersLockedAt: string | null;
-  answersLockReason: 'ready' | 'left' | null;
+  answersLockReason: 'ready' | 'left' | 'tab_exit' | null;
   resultsReady: boolean;
 }
 

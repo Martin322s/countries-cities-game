@@ -32,6 +32,10 @@ vi.mock('../api/gameApi', () => ({
   setResultsReady: vi.fn(),
   startGame: vi.fn(),
 }));
+vi.mock('../activity/useVisibilityReporter', () => ({
+  useVisibilityReporter: () => false,
+  readLockedDraft: () => null,
+}));
 
 const roomId = 'room-1' as RoomId;
 const other = 'player-other' as PlayerId;
@@ -251,6 +255,43 @@ describe('AnswerForm keyboard', () => {
     for (const input of screen.getAllByRole('textbox')) expect(input).toHaveAttribute('readonly');
   });
 
+  it('blocks clipboard and text drop events on answer fields', () => {
+    const { onChange } = renderForm();
+    const input = screen.getByLabelText('Държава');
+    expect(fireEvent.paste(input, { clipboardData: { getData: () => 'Югославия' } })).toBe(false);
+    expect(fireEvent.drop(input, { dataTransfer: { getData: () => 'Югославия' } })).toBe(false);
+    expect(fireEvent.dragOver(input)).toBe(false);
+    expect(fireEvent.copy(input)).toBe(false);
+    expect(fireEvent.cut(input)).toBe(false);
+    for (const inputType of ['insertFromPaste', 'insertFromPasteAsQuotation', 'insertFromDrop']) {
+      expect(
+        input.dispatchEvent(
+          new InputEvent('beforeinput', {
+            inputType,
+            bubbles: true,
+            cancelable: true,
+          }),
+        ),
+      ).toBe(false);
+    }
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { ctrlKey: true, key: 'v' },
+    { metaKey: true, key: 'v' },
+    { shiftKey: true, key: 'Insert' },
+  ])('blocks paste shortcut %j', (shortcut) => {
+    renderForm();
+    expect(fireEvent.keyDown(screen.getByLabelText('Държава'), shortcut)).toBe(false);
+  });
+
+  it('rejects synthetic changes when read-only', () => {
+    const { onChange } = renderForm(true);
+    fireEvent.change(screen.getByLabelText('Държава'), { target: { value: 'Югославия' } });
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
   it('warns while typing when an answer does not start with the round letter', () => {
     renderForm(false, { ...emptyAnswers(), country: 'Югославия', name: 'Кристина' });
     expect(screen.getByLabelText('Държава')).not.toHaveAttribute('aria-invalid');
@@ -296,13 +337,13 @@ describe('PlayingScreen', () => {
     expect(within(list).getByText('Деси').closest('li')).toHaveTextContent('Готов');
   });
 
-  it('flushes pending edits, then locks with READY', async () => {
+  it('flushes pending edits before sending STOP', async () => {
     pinServerClock(Date.now());
     const user = userEvent.setup();
     renderPlaying();
     const country = await screen.findByLabelText('Държава');
     await user.type(country, 'Малта');
-    await user.click(screen.getByRole('button', { name: 'ГОТОВ — ЗАКЛЮЧИ ОТГОВОРИТЕ' }));
+    await user.click(screen.getByRole('button', { name: 'СТОП' }));
 
     await vi.waitFor(() => {
       expect(gameApi.lockAnswers).toHaveBeenCalledWith(roomId, 'round-1');
@@ -313,6 +354,7 @@ describe('PlayingScreen', () => {
       country: 'Малта',
     });
     expect(saveOrder).toBeLessThan(lockOrder);
+    for (const input of screen.getAllByRole('textbox')) expect(input).toHaveAttribute('readonly');
   });
 
   it('shows the locked, waiting state after personal READY (also after refresh)', async () => {
@@ -324,9 +366,7 @@ describe('PlayingScreen', () => {
     expect(city).toHaveAttribute('readonly');
     expect(screen.getByText('ГОТОВ СИ')).toBeVisible();
     expect(screen.getByText(/Изчакваме останалите/)).toBeVisible();
-    expect(
-      screen.queryByRole('button', { name: 'ГОТОВ — ЗАКЛЮЧИ ОТГОВОРИТЕ' }),
-    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'СТОП' })).toBeVisible();
   });
 
   it('locks every input the moment time is up', async () => {
@@ -343,8 +383,8 @@ describe('PostRoundScreen', () => {
     timeline: {
       countdownAt: NOW - 3_000,
       startedAt: NOW,
-      endsAt: NOW + 120_000,
-      lockedAt: NOW + 120_000,
+      endsAt: NOW + 60_000,
+      lockedAt: NOW + 60_000,
       revealAt: null,
     },
     lockReason: 'timeout',
@@ -374,7 +414,7 @@ describe('PostRoundScreen', () => {
     // Pre-round readiness does not leak into the results stage.
     const list = screen.getByRole('list', { name: 'Готовност за резултатите' });
     expect(within(list).getByText('Стоян').closest('li')).toHaveTextContent('Не е готов');
-    await user.click(screen.getByRole('button', { name: 'ГОТОВ ЗА РЕЗУЛТАТИТЕ' }));
+    await user.click(screen.getByRole('button', { name: 'ГОТОВ' }));
     expect(gameApi.setResultsReady).toHaveBeenCalledWith(roomId);
   });
 
@@ -389,7 +429,7 @@ describe('PostRoundScreen', () => {
         onlinePlayerIds={new Set()}
       />,
     );
-    expect(screen.getByRole('heading', { name: 'ВСИЧКИ СА ГОТОВИ' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'РУНДЪТ ПРИКЛЮЧИ' })).toBeVisible();
     expect(screen.getByRole('status')).toHaveTextContent('ГОТОВ СИ');
     expect(screen.getByRole('status')).toHaveTextContent('Изчакваме останалите...');
   });

@@ -2,7 +2,7 @@
  * Room-level game phase state machine.
  *
  * LOBBY → ROUND_WAITING → COUNTDOWN → PLAYING → ROUND_LOCKED → RESULTS_READY
- *       → REVEAL → RESULTS → ROUND_WAITING → … → FINISHED
+ *       → AI_VALIDATING → REVEAL → RESULTS → ROUND_WAITING → … → FINISHED
  *
  * Transitions are executed by the server; clients only render the current phase.
  * This table is the single source of truth for which transitions are legal and is
@@ -15,6 +15,7 @@ export const GAME_PHASES = [
   'PLAYING',
   'ROUND_LOCKED',
   'RESULTS_READY',
+  'AI_VALIDATING',
   'REVEAL',
   'RESULTS',
   'FINISHED',
@@ -36,7 +37,8 @@ export const PHASE_TRANSITIONS: Readonly<Record<GamePhase, readonly GamePhase[]>
   COUNTDOWN: ['PLAYING'],
   PLAYING: ['ROUND_LOCKED'],
   ROUND_LOCKED: ['RESULTS_READY'],
-  RESULTS_READY: ['REVEAL'],
+  RESULTS_READY: ['AI_VALIDATING'],
+  AI_VALIDATING: ['REVEAL'],
   REVEAL: ['RESULTS'],
   // From RESULTS the host starts a new round, or the game ends when no letters remain.
   RESULTS: ['ROUND_WAITING', 'FINISHED'],
@@ -64,12 +66,12 @@ export function readyStageForPhase(phase: GamePhase): ReadyStage | null {
     case 'RESULTS_READY':
       return 'pre_results';
     case 'PLAYING':
-      // "ГОТОВ" during PLAYING means "submit & lock my answers"; it is tracked as a
-      // submission on the answer sheet, not as a ready-check stage.
+      // STOP ends the round for everyone. READY is collected only in RESULTS_READY.
       return null;
     case 'LOBBY':
     case 'COUNTDOWN':
     case 'ROUND_LOCKED':
+    case 'AI_VALIDATING':
     case 'REVEAL':
     case 'RESULTS':
     case 'FINISHED':

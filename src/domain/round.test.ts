@@ -72,6 +72,7 @@ describe('deriveRoundStage', () => {
     expect(deriveRoundStage('ROUND_WAITING', null, 0).kind).toBe('waiting');
     expect(deriveRoundStage('ROUND_LOCKED', timeline, 0).kind).toBe('results_ready');
     expect(deriveRoundStage('RESULTS_READY', timeline, 0).kind).toBe('results_ready');
+    expect(deriveRoundStage('AI_VALIDATING', timeline, 0).kind).toBe('ai_validating');
     expect(deriveRoundStage('REVEAL', timeline, 0).kind).toBe('reveal');
     expect(deriveRoundStage('LOBBY', null, 0).kind).toBe('lobby');
   });

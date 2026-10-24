@@ -56,6 +56,7 @@ class FakeTab {
     bus: Bus | null,
     private readonly clock: { now: number },
     visible = true,
+    lockOnExit = false,
   ) {
     this.visibilityState = visible ? 'visible' : 'hidden';
     const doc: MonitorDocument = {
@@ -95,6 +96,7 @@ class FakeTab {
       channel: bus ? bus.open() : null,
       now: () => this.clock.now,
       report: (report) => this.reports.push(report),
+      lockOnExit,
     });
   }
 
@@ -128,6 +130,30 @@ class FakeTab {
     return taken;
   }
 }
+
+describe('TabVisibilityMonitor — strict round lock', () => {
+  it('reports exactly once for blur, hidden, pagehide and focus', () => {
+    const tab = new FakeTab('strict', null, { now: 0 }, true, true);
+    tab.monitor.start();
+    expect(tab.take()).toEqual([]);
+    tab.fireWindow('blur');
+    tab.setVisible(false);
+    tab.fireWindow('pagehide');
+    tab.setVisible(true);
+    tab.fireWindow('focus');
+    expect(tab.take()).toEqual(['away']);
+    tab.monitor.stop();
+  });
+
+  it('locks immediately when answering starts with the tab already hidden', () => {
+    const tab = new FakeTab('hidden', null, { now: 0 }, false, true);
+    tab.monitor.start();
+    expect(tab.take()).toEqual(['away']);
+    tab.setVisible(true);
+    expect(tab.take()).toEqual([]);
+    tab.monitor.stop();
+  });
+});
 
 describe('TabVisibilityMonitor — single tab', () => {
   it('reports a return on start (closes anything left open) and away on hide', () => {

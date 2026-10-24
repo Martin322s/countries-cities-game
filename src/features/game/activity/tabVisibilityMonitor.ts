@@ -30,9 +30,12 @@ export interface MonitorDocument {
 }
 
 export interface MonitorWindow {
-  addEventListener(type: 'pagehide' | 'pageshow' | 'focus', listener: (event: Event) => void): void;
+  addEventListener(
+    type: 'pagehide' | 'pageshow' | 'focus' | 'blur',
+    listener: (event: Event) => void,
+  ): void;
   removeEventListener(
-    type: 'pagehide' | 'pageshow' | 'focus',
+    type: 'pagehide' | 'pageshow' | 'focus' | 'blur',
     listener: (event: Event) => void,
   ): void;
   setInterval(handler: () => void, ms: number): number;
@@ -60,6 +63,8 @@ export interface MonitorDeps {
   channel: MonitorChannel | null;
   now: () => number;
   report: (report: { visible: boolean; unloading: boolean }) => void;
+  /** Strict game rule: this tab losing focus locks the player's round permanently. */
+  lockOnExit?: boolean;
 }
 
 export class TabVisibilityMonitor {
@@ -67,6 +72,7 @@ export class TabVisibilityMonitor {
   private last: TabObservation | null = null;
   private unloading = false;
   private timer: number | null = null;
+  private exitReported = false;
 
   constructor(private readonly deps: MonitorDeps) {}
 
@@ -77,6 +83,7 @@ export class TabVisibilityMonitor {
     win.addEventListener('pagehide', this.onPageHide);
     win.addEventListener('pageshow', this.onPageShow);
     win.addEventListener('focus', this.recheck);
+    if (this.deps.lockOnExit) win.addEventListener('blur', this.onBlur);
     channel?.addEventListener('message', this.onMessage);
     channel?.postMessage({ type: 'hello', tabId: this.deps.tabId });
     this.timer = win.setInterval(this.onTick, TAB_HEARTBEAT_MS);
@@ -90,6 +97,7 @@ export class TabVisibilityMonitor {
     win.removeEventListener('pagehide', this.onPageHide);
     win.removeEventListener('pageshow', this.onPageShow);
     win.removeEventListener('focus', this.recheck);
+    win.removeEventListener('blur', this.onBlur);
     if (this.timer !== null) win.clearInterval(this.timer);
     this.timer = null;
     if (channel) {
@@ -105,6 +113,10 @@ export class TabVisibilityMonitor {
   }
 
   private evaluate(cause: { unloading?: boolean; peerReportedAway?: boolean } = {}): void {
+    if (this.deps.lockOnExit) {
+      if (!this.selfVisible()) this.reportExit();
+      return;
+    }
     const now = this.deps.now();
     const selfVisible = this.selfVisible();
     const next: TabObservation = {
@@ -138,6 +150,16 @@ export class TabVisibilityMonitor {
 
   private readonly onVisibilityChange = () => {
     this.evaluate();
+  };
+
+  private reportExit(): void {
+    if (this.exitReported) return;
+    this.exitReported = true;
+    this.deps.report({ visible: false, unloading: this.unloading });
+  }
+
+  private readonly onBlur = () => {
+    this.reportExit();
   };
 
   private readonly recheck = () => {

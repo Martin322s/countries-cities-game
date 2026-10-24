@@ -67,7 +67,13 @@ export interface RoundResults {
   standings: Standing[];
 }
 
-const CELL_STATES: readonly CellState[] = ['unique', 'duplicate', 'empty', 'wrong_letter', 'invalid'];
+const CELL_STATES: readonly CellState[] = [
+  'unique',
+  'duplicate',
+  'empty',
+  'wrong_letter',
+  'invalid',
+];
 
 type JsonObject = Record<string, unknown>;
 const isObject = (value: unknown): value is JsonObject =>

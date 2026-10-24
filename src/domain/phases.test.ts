@@ -18,6 +18,7 @@ describe('game phase state machine', () => {
       'PLAYING',
       'ROUND_LOCKED',
       'RESULTS_READY',
+      'AI_VALIDATING',
       'REVEAL',
       'RESULTS',
       'ROUND_WAITING',
@@ -31,6 +32,7 @@ describe('game phase state machine', () => {
     expect(canTransition('ROUND_WAITING', 'PLAYING')).toBe(false);
     expect(canTransition('PLAYING', 'RESULTS')).toBe(false);
     expect(canTransition('LOBBY', 'RESULTS')).toBe(false);
+    expect(canTransition('RESULTS_READY', 'RESULTS')).toBe(false);
   });
 
   it('can only finish the game from RESULTS, and FINISHED is terminal', () => {

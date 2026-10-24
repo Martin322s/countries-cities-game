@@ -11,7 +11,7 @@ import {
 } from '@/domain';
 import { RoomError } from '@/features/rooms/api/roomErrors';
 
-export type RoundLockReason = 'all_ready' | 'timeout';
+export type RoundLockReason = 'all_ready' | 'timeout' | 'stop';
 
 export interface GameRound {
   id: RoundId;
@@ -20,6 +20,7 @@ export interface GameRound {
   letter: EligibleLetter | null;
   timeline: RoundTimeline;
   lockReason: RoundLockReason | null;
+  validationTimedOut?: boolean;
 }
 
 /** A round whose results can be browsed (revealed). Its letter is no secret anymore. */
@@ -80,7 +81,12 @@ function parseRound(value: unknown): GameRound | null {
   const letter = optionalStr(value, 'letter');
   if (letter !== null && !isEligibleLetter(letter)) return malformed('round.letter');
   const lockReason = optionalStr(value, 'lock_reason');
-  if (lockReason !== null && lockReason !== 'all_ready' && lockReason !== 'timeout') {
+  if (
+    lockReason !== null &&
+    lockReason !== 'all_ready' &&
+    lockReason !== 'timeout' &&
+    lockReason !== 'stop'
+  ) {
     return malformed('round.lock_reason');
   }
   return {
@@ -95,13 +101,20 @@ function parseRound(value: unknown): GameRound | null {
       revealAt: timestamp(value, 'reveal_at'),
     },
     lockReason,
+    validationTimedOut:
+      value.validation_timed_out === undefined ? false : bool(value, 'validation_timed_out'),
   };
 }
 
 function parseParticipant(value: unknown): RoundParticipant {
   if (!isObject(value)) return malformed('participant');
   const lockReason = optionalStr(value, 'answers_lock_reason');
-  if (lockReason !== null && lockReason !== 'ready' && lockReason !== 'left') {
+  if (
+    lockReason !== null &&
+    lockReason !== 'ready' &&
+    lockReason !== 'left' &&
+    lockReason !== 'tab_exit'
+  ) {
     return malformed('participant.answers_lock_reason');
   }
   return {

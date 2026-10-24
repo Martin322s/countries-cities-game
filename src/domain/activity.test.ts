@@ -23,7 +23,7 @@ const DESI = 'desi' as PlayerId;
 const KALOYAN = 'kaloyan' as PlayerId;
 const STOYAN = 'stoyan' as PlayerId;
 const T0 = 1_000_000;
-const CAP = T0 + 120_000;
+const CAP = T0 + 60_000;
 
 let nextId = 1;
 const interval = (overrides: Partial<AwayInterval> = {}): AwayInterval => ({

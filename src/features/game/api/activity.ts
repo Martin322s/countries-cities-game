@@ -1,4 +1,12 @@
-import type { AwayEndReason, AwayInterval, AwaySource, PlayerId, RoomId, RoundId } from '@/domain';
+import type {
+  AnswerValues,
+  AwayEndReason,
+  AwayInterval,
+  AwaySource,
+  PlayerId,
+  RoomId,
+  RoundId,
+} from '@/domain';
 import { callBackend } from '@/features/rooms/api/roomsApi';
 import { RoomError } from '@/features/rooms/api/roomErrors';
 import { getSupabaseEnv } from '@/shared/lib/env';
@@ -94,7 +102,7 @@ export function fetchRoundActivity(roomId: RoomId, roundId: RoundId): Promise<Ro
  * The access token is passed in by the caller (read ahead of time: there is no time
  * to await a session lookup while a page is being hidden).
  *
- * Fire-and-forget by design: a lost report only means one fewer informational entry.
+ * The caller retries failures: away now permanently locks the player's sheet.
  */
 export async function reportVisibility(input: {
   roomId: RoomId;
@@ -102,27 +110,25 @@ export async function reportVisibility(input: {
   visible: boolean;
   unloading?: boolean;
   accessToken: string;
+  answers?: AnswerValues;
 }): Promise<void> {
   const env = getSupabaseEnv();
-  if (!env.ok) return;
-  try {
-    await fetch(`${env.env.supabaseUrl}/rest/v1/rpc/report_visibility`, {
-      method: 'POST',
-      keepalive: true,
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: env.env.supabasePublishableKey,
-        Authorization: `Bearer ${input.accessToken}`,
-      },
-      body: JSON.stringify({
-        p_room_id: input.roomId,
-        p_round_id: input.roundId,
-        p_visible: input.visible,
-        p_unloading: input.unloading ?? false,
-      }),
-    });
-  } catch (error) {
-    // Offline or unloading: nothing to recover — visibility is best-effort.
-    if (import.meta.env.DEV) console.warn('Visibility report failed', error);
-  }
+  if (!env.ok) throw new Error('Supabase is not configured');
+  const response = await fetch(`${env.env.supabaseUrl}/rest/v1/rpc/report_visibility`, {
+    method: 'POST',
+    keepalive: true,
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: env.env.supabasePublishableKey,
+      Authorization: `Bearer ${input.accessToken}`,
+    },
+    body: JSON.stringify({
+      p_room_id: input.roomId,
+      p_round_id: input.roundId,
+      p_visible: input.visible,
+      p_unloading: input.unloading ?? false,
+      ...(input.answers ? { p_answers: input.answers } : {}),
+    }),
+  });
+  if (!response.ok) throw new Error(`Visibility report failed: ${response.status}`);
 }

@@ -48,6 +48,7 @@ export function useAnswerDraft({
   save = saveAnswers,
 }: UseAnswerDraftOptions) {
   const [values, setValues] = useState<AnswerValues>(initial);
+  const latestValues = useRef(initial);
   const [status, setStatus] = useState<SaveStatus>('idle');
   const dirty = useRef(new Map<CategoryId, string>());
   const timer = useRef<number | undefined>(undefined);
@@ -88,6 +89,7 @@ export function useAnswerDraft({
 
   const setValue = useCallback((category: CategoryId, value: string) => {
     if (closed.current) return;
+    latestValues.current = { ...latestValues.current, [category]: value };
     setValues((current) => ({ ...current, [category]: value }));
     dirty.current.set(category, value);
     setStatus('pending');
@@ -110,5 +112,7 @@ export function useAnswerDraft({
     [],
   );
 
-  return { values, setValue, flush: persist, close, status };
+  const snapshot = useCallback(() => latestValues.current, []);
+  const hasPending = useCallback(() => dirty.current.size > 0, []);
+  return { values, setValue, flush: persist, close, status, snapshot, hasPending };
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type RefObject } from 'react';
 
 import {
   shouldMonitorVisibility,
@@ -17,7 +17,7 @@ import { Notice } from '@/shared/ui/Notice';
 import { ActivityHeaderSlot } from '../activity/components/ActivityHeaderSlot';
 import { ActivityPanel } from '../activity/components/ActivityPanel';
 import { AwayBadge } from '../activity/components/AwayBadge';
-import { useVisibilityReporter } from '../activity/useVisibilityReporter';
+import { readLockedDraft, useVisibilityReporter } from '../activity/useVisibilityReporter';
 import type { GameRound } from '../api/gameState';
 import { useServerNowAt, useServerNowEvery } from '../clock/useServerTime';
 import { useAnswerDraft, type SaveAnswersFn, type SaveStatus } from '../hooks/useAnswerDraft';
@@ -51,6 +51,21 @@ interface PlayingScreenProps {
 
 export function PlayingScreen(props: PlayingScreenProps) {
   const ownAnswers = useOwnAnswers(props.round.id, props.playerId);
+  const exitRef = useRef<(() => AnswerValues) | null>(null);
+  const me = props.participants.find((p) => p.playerId === props.playerId);
+  // Monitor the whole answering window, including a slow answer fetch after reconnect.
+  const tabLocked = useVisibilityReporter({
+    roomId: props.roomId,
+    roundId: props.round.id,
+    active: shouldMonitorVisibility({
+      stage: props.timeUp || props.round.timeline.lockedAt !== null ? 'time_up' : 'playing',
+      isParticipant: me !== undefined,
+      left: me?.left ?? true,
+      answersLocked: me?.answersLockedAt != null,
+    }),
+    onExit: () =>
+      exitRef.current?.() ?? (ownAnswers.data ? toAnswerValues(ownAnswers.data) : undefined),
+  });
 
   if (ownAnswers.isPending) {
     return (
@@ -70,7 +85,15 @@ export function PlayingScreen(props: PlayingScreenProps) {
     );
   }
   // Remounts per round, so a later round starts from its own persisted answers.
-  return <AnswerSheet key={props.round.id} {...props} initial={toAnswerValues(ownAnswers.data)} />;
+  return (
+    <AnswerSheet
+      key={props.round.id}
+      {...props}
+      initial={toAnswerValues(ownAnswers.data)}
+      tabLocked={tabLocked}
+      exitRef={exitRef}
+    />
+  );
 }
 
 /** One quiet shared line — no spinner per autosave, fixed height (no layout shift). */
@@ -93,35 +116,48 @@ function AnswerSheet({
   timeUp,
   save,
   initial,
-}: PlayingScreenProps & { initial: AnswerValues }) {
+  tabLocked,
+  exitRef,
+}: PlayingScreenProps & {
+  initial: AnswerValues;
+  tabLocked: boolean;
+  exitRef: RefObject<(() => AnswerValues) | null>;
+}) {
   const { startedAt, endsAt } = round.timeline;
-  const draft = useAnswerDraft({ roomId, roundId: round.id, initial, ...(save ? { save } : {}) });
+  const [restoredInitial] = useState(() => readLockedDraft(roomId, round.id) ?? initial);
+  const draft = useAnswerDraft({
+    roomId,
+    roundId: round.id,
+    initial: restoredInitial,
+    ...(save ? { save } : {}),
+  });
   const lock = useLockAnswers(roomId);
   const [locking, setLocking] = useState(false);
+  const [stopped, setStopped] = useState(false);
   const readyRef = useRef<HTMLButtonElement>(null);
   const now = useServerNowAt(startedAt + LETTER_REVEAL_MS, endsAt - FINAL_FLUSH_BEFORE_MS);
   const statusNow = useServerNowEvery(5_000);
 
   const me = participants.find((p) => p.playerId === playerId);
   const myLocked = me?.answersLockedAt != null;
-  const locked = myLocked || timeUp;
   const nearDeadline = now >= endsAt - FINAL_FLUSH_BEFORE_MS;
   const revealing = now < startedAt + LETTER_REVEAL_MS;
   const { flush, close } = draft;
   const audio = useGameAudio();
   useCue(now < startedAt + LETTER_REVEAL_MS + 400, letterCue(round.id, startedAt));
 
-  // Fair-play: report page visibility only while this player can still edit answers.
-  useVisibilityReporter({
-    roomId,
-    roundId: round.id,
-    active: shouldMonitorVisibility({
-      stage: timeUp ? 'time_up' : 'playing',
-      isParticipant: me !== undefined,
-      left: me?.left ?? true,
-      answersLocked: myLocked,
-    }),
-  });
+  const { snapshot } = draft;
+  useEffect(() => {
+    exitRef.current = () => {
+      close();
+      return snapshot();
+    };
+    return () => {
+      exitRef.current = null;
+    };
+  }, [exitRef, close, snapshot]);
+  const roundClosed = stopped || timeUp || round.timeline.lockedAt !== null;
+  const locked = myLocked || tabLocked || roundClosed;
 
   // Last chance to persist edits before the server deadline.
   useEffect(() => {
@@ -134,10 +170,16 @@ function AnswerSheet({
   }, [locked, close]);
 
   const lockAnswers = async () => {
+    if (roundClosed || locking || !me || me.left) return;
     setLocking(true);
     try {
-      await flush();
+      if (!myLocked && !tabLocked) {
+        await flush();
+        if (draft.hasPending()) return;
+      }
       await lock.mutateAsync(round.id);
+      close();
+      setStopped(true);
       audio.cue(readyCue(round.id));
     } catch {
       // Shown via lock.error.
@@ -191,15 +233,20 @@ function AnswerSheet({
                 Рунд {round.number}
               </p>
               <p className="font-semibold text-fg">
-                {finished} / {active} готови
+                {finished} / {active} заключени
               </p>
             </div>
           </ActivityHeaderSlot>
         </div>
-        <RoundTimer roundId={round.id} endsAt={endsAt} answersLocked={myLocked} />
+        <RoundTimer roundId={round.id} endsAt={endsAt} answersLocked={locked} />
       </div>
 
       {timeUp ? <Notice tone="warning">Времето изтече — отговорите са заключени.</Notice> : null}
+      {tabLocked || me?.answersLockReason === 'tab_exit' ? (
+        <Notice tone="warning">
+          Излязохте от играта. Полетата ви са заключени до края на този рунд.
+        </Notice>
+      ) : null}
 
       <AnswerForm
         values={draft.values}
@@ -214,9 +261,10 @@ function AnswerSheet({
         {lock.error ? (
           <Notice tone="error">{roomErrorMessage(lock.error.code, 'answers')}</Notice>
         ) : null}
-        {myLocked ? (
+        {myLocked && me.answersLockReason !== 'tab_exit' ? (
           <ReadyConfirmed detail="Отговорите ти са заключени. Изчакваме останалите..." />
-        ) : !locked ? (
+        ) : null}
+        {!roundClosed && me && !me.left ? (
           <Button
             ref={readyRef}
             size="lg"
@@ -224,7 +272,7 @@ function AnswerSheet({
             loading={locking}
             onClick={() => void lockAnswers()}
           >
-            ГОТОВ — ЗАКЛЮЧИ ОТГОВОРИТЕ
+            СТОП
           </Button>
         ) : null}
         <p
@@ -248,9 +296,11 @@ function AnswerSheet({
           onlinePlayerIds={onlinePlayerIds}
           now={statusNow}
           statusOf={(p) =>
-            p.answersLockedAt !== null
-              ? { label: 'Готов', done: true }
-              : { label: 'Пише...', done: false }
+            p.answersLockReason === 'tab_exit'
+              ? { label: 'Заключен', done: true }
+              : p.answersLockedAt !== null
+                ? { label: 'Готов', done: true }
+                : { label: 'Пише...', done: false }
           }
           badgeOf={(p) =>
             p.playerId === playerId ? null : (

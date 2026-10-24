@@ -5,6 +5,12 @@ export type Database = {
   
   "public": {
           Tables: {
+"round_validations": {
+Row: { id: number; room_id: string; round_id: string; player_id: string; category: Database["public"]['Enums']["answer_category"]; answer: string; validation_status: Database["public"]['Enums']["answer_validation_status"]; validation_reason: Database["public"]['Enums']["answer_validation_reason"] | null; validation_suggestion: string | null; model: string; created_at: string },
+Insert: { id?: never; room_id: string; round_id: string; player_id: string; category: Database["public"]['Enums']["answer_category"]; answer: string; validation_status: Database["public"]['Enums']["answer_validation_status"]; validation_reason?: Database["public"]['Enums']["answer_validation_reason"] | null; validation_suggestion?: string | null; model?: string; created_at?: string },
+Update: Partial<Database["public"]['Tables']['round_validations']['Insert']>,
+Relationships: [{ foreignKeyName: "round_validations_room_id_fkey"; columns: ["room_id"]; isOneToOne: false; referencedRelation: "rooms"; referencedColumns: ["id"] }]
+},
             "answer_invalidation_events": {
                   Row: {
                     "action": Database["public"]['Enums']["invalidation_action"],"actor_id": string | null,"category": Database["public"]['Enums']["answer_category"],"created_at": string,"id": number,"player_id": string,"room_id": string,"round_id": string
@@ -57,12 +63,15 @@ isOneToOne: false
                   ]
                 },"answers": {
                   Row: {
+"validation_status": Database["public"]['Enums']["answer_validation_status"],"validation_reason": Database["public"]['Enums']["answer_validation_reason"] | null,"validation_suggestion": string | null,"validated_at": string | null,
                     "category": Database["public"]['Enums']["answer_category"],"invalidated_at": string | null,"invalidated_by": string | null,"normalized_value": string,"player_id": string,"raw_value": string,"round_id": string
                   }
                   Insert: {
+"validation_status"?: Database["public"]['Enums']["answer_validation_status"],"validation_reason"?: Database["public"]['Enums']["answer_validation_reason"] | null,"validation_suggestion"?: string | null,"validated_at"?: string | null,
                     "category": Database["public"]['Enums']["answer_category"],"invalidated_at"?: string | null,"invalidated_by"?: string | null,"normalized_value"?: string,"player_id": string,"raw_value"?: string,"round_id": string
                   }
                   Update: {
+"validation_status"?: Database["public"]['Enums']["answer_validation_status"],"validation_reason"?: Database["public"]['Enums']["answer_validation_reason"] | null,"validation_suggestion"?: string | null,"validated_at"?: string | null,
                     "category"?: Database["public"]['Enums']["answer_category"],"invalidated_at"?: string | null,"invalidated_by"?: string | null,"normalized_value"?: string,"player_id"?: string,"raw_value"?: string,"round_id"?: string
                   }
                   Relationships: [
@@ -150,13 +159,16 @@ isOneToOne: false
     }
                   ]
                 },"rounds": {
-                  Row: {
+                  Row: { "validation_attempts": number,
+"validation_started_at": string | null,"validation_finished_at": string | null,"validation_claim": string | null,"validation_claimed_at": string | null,
                     "countdown_at": string | null,"created_at": string,"ends_at": string | null,"id": string,"letter": string | null,"lock_reason": Database["public"]['Enums']["round_lock_reason"] | null,"locked_at": string | null,"reveal_at": string | null,"room_id": string,"round_number": number,"started_at": string | null
                   }
-                  Insert: {
+                  Insert: { "validation_attempts"?: number,
+"validation_started_at"?: string | null,"validation_finished_at"?: string | null,"validation_claim"?: string | null,"validation_claimed_at"?: string | null,
                     "countdown_at"?: string | null,"created_at"?: string,"ends_at"?: string | null,"id"?: string,"letter"?: string | null,"lock_reason"?: Database["public"]['Enums']["round_lock_reason"] | null,"locked_at"?: string | null,"reveal_at"?: string | null,"room_id": string,"round_number": number,"started_at"?: string | null
                   }
-                  Update: {
+                  Update: { "validation_attempts"?: number,
+"validation_started_at"?: string | null,"validation_finished_at"?: string | null,"validation_claim"?: string | null,"validation_claimed_at"?: string | null,
                     "countdown_at"?: string | null,"created_at"?: string,"ends_at"?: string | null,"id"?: string,"letter"?: string | null,"lock_reason"?: Database["public"]['Enums']["round_lock_reason"] | null,"locked_at"?: string | null,"reveal_at"?: string | null,"room_id"?: string,"round_number"?: number,"started_at"?: string | null
                   }
                   Relationships: [
@@ -205,6 +217,10 @@ isOneToOne: false
             [_ in never]: never
           }
           Functions: {
+claim_ai_validation: { Args: { p_room_id: string; p_round_id: string }; Returns: Json },
+release_ai_validation: { Args: { p_round_id: string; p_claim: string }; Returns: undefined },
+complete_ai_validation: { Args: { p_room_id: string; p_round_id: string; p_claim: string; p_results: Json }; Returns: boolean },
+set_ai_validation_pending: { Args: { p_room_id: string }; Returns: undefined },
             "advance_game":
 { Args: { "p_room_id": string }; Returns: undefined
                            },
@@ -334,7 +350,7 @@ isOneToOne: false
 { Args: { "p_code": string }; Returns: undefined
                            },
 "report_visibility":
-{ Args: { "p_room_id": string,"p_round_id": string,"p_unloading"?: boolean,"p_visible": boolean }; Returns: Json
+{ Args: { "p_room_id": string,"p_round_id": string,"p_unloading"?: boolean,"p_visible": boolean,"p_answers"?: Json }; Returns: Json
                            },
 "reveal_duration":
 { Args: Record<PropertyKey, never>; Returns: string
@@ -382,7 +398,9 @@ isOneToOne: false
                            }
           }
           Enums: {
-            "answer_category": "country"|"city"|"village"|"animal"|"plant"|"object"|"name","game_phase": "LOBBY"|"ROUND_WAITING"|"COUNTDOWN"|"PLAYING"|"ROUND_LOCKED"|"RESULTS_READY"|"REVEAL"|"RESULTS"|"FINISHED","invalidation_action": "invalidate"|"restore","member_left_reason": "left"|"expired","ready_stage": "pre_round"|"pre_results","round_lock_reason": "all_ready"|"timeout","sheet_lock_reason": "ready"|"left","visibility_end_reason": "returned"|"round_ended"|"answers_locked","visibility_source": "visibility"|"blur"|"presence"|"unload"
+answer_validation_status: 'PENDING' | 'VALID' | 'INVALID',
+answer_validation_reason: 'WRONG_LETTER' | 'MISSPELLING' | 'DOES_NOT_EXIST' | 'WRONG_CATEGORY' | 'AMBIGUOUS',
+            "answer_category": "country"|"city"|"village"|"animal"|"plant"|"object"|"name","game_phase": "LOBBY"|"ROUND_WAITING"|"COUNTDOWN"|"PLAYING"|"ROUND_LOCKED"|"RESULTS_READY"|"AI_VALIDATING"|"REVEAL"|"RESULTS"|"FINISHED","invalidation_action": "invalidate"|"restore","member_left_reason": "left"|"expired","ready_stage": "pre_round"|"pre_results","round_lock_reason": "all_ready"|"timeout"|"stop","sheet_lock_reason": "ready"|"left"|"tab_exit","visibility_end_reason": "returned"|"round_ended"|"answers_locked","visibility_source": "visibility"|"blur"|"presence"|"unload"
           }
           CompositeTypes: {
             [_ in never]: never
@@ -498,7 +516,9 @@ export type CompositeTypes<
 export const Constants = {
   "public": {
           Enums: {
-            "answer_category": ["country", "city", "village", "animal", "plant", "object", "name"],"game_phase": ["LOBBY", "ROUND_WAITING", "COUNTDOWN", "PLAYING", "ROUND_LOCKED", "RESULTS_READY", "REVEAL", "RESULTS", "FINISHED"],"invalidation_action": ["invalidate", "restore"],"member_left_reason": ["left", "expired"],"ready_stage": ["pre_round", "pre_results"],"round_lock_reason": ["all_ready", "timeout"],"sheet_lock_reason": ["ready", "left"],"visibility_end_reason": ["returned", "round_ended", "answers_locked"],"visibility_source": ["visibility", "blur", "presence", "unload"]
+answer_validation_status: ['PENDING', 'VALID', 'INVALID'],
+answer_validation_reason: ['WRONG_LETTER', 'MISSPELLING', 'DOES_NOT_EXIST', 'WRONG_CATEGORY', 'AMBIGUOUS'],
+            "answer_category": ["country", "city", "village", "animal", "plant", "object", "name"],"game_phase": ["LOBBY", "ROUND_WAITING", "COUNTDOWN", "PLAYING", "ROUND_LOCKED", "RESULTS_READY", "AI_VALIDATING", "REVEAL", "RESULTS", "FINISHED"],"invalidation_action": ["invalidate", "restore"],"member_left_reason": ["left", "expired"],"ready_stage": ["pre_round", "pre_results"],"round_lock_reason": ["all_ready", "timeout", "stop"],"sheet_lock_reason": ["ready", "left", "tab_exit"],"visibility_end_reason": ["returned", "round_ended", "answers_locked"],"visibility_source": ["visibility", "blur", "presence", "unload"]
           }
         }
 } as const

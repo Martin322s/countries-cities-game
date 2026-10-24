@@ -33,7 +33,7 @@ describe('cue rules', () => {
   });
 
   it('ticks only in the final ten seconds, and not for a player who already locked', () => {
-    const endsAt = NOW + 120_000;
+    const endsAt = NOW + 60_000;
     expect(TIMER_TICK_FROM_SECONDS).toBe(10);
     expect(timerCue(ROUND, endsAt, 30_000, { answersLocked: false })).toBeNull();
     expect(timerCue(ROUND, endsAt, 10_000, { answersLocked: false })).toMatchObject({

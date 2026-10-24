@@ -44,6 +44,20 @@ export function AnswerForm({
   const didAutoFocus = useRef(false);
 
   useEffect(() => {
+    // Native beforeinput covers browser paste/drop paths that React may not synthesize.
+    const elements = inputs.current.filter((input) => input !== null);
+    const blockInsertion = (event: InputEvent) => {
+      if (event.inputType.startsWith('insertFromPaste') || event.inputType === 'insertFromDrop') {
+        event.preventDefault();
+      }
+    };
+    for (const input of elements) input.addEventListener('beforeinput', blockInsertion);
+    return () => {
+      for (const input of elements) input.removeEventListener('beforeinput', blockInsertion);
+    };
+  }, []);
+
+  useEffect(() => {
     // Only once, when the form first appears. Desktop only: on phones this would pop
     // the keyboard over the letter and the timer.
     if (didAutoFocus.current) return;
@@ -52,6 +66,13 @@ export function AnswerForm({
   }, [autoFocusFirst, readOnly]);
 
   const handleKeyDown = (index: number) => (event: KeyboardEvent<HTMLInputElement>) => {
+    if (
+      ((event.ctrlKey || event.metaKey) && ['v', 'c', 'x'].includes(event.key.toLowerCase())) ||
+      (event.shiftKey && event.key === 'Insert')
+    ) {
+      event.preventDefault();
+      return;
+    }
     if (event.key !== 'Enter' || composing.current || event.nativeEvent.isComposing) return;
     event.preventDefault();
     const next = inputs.current[index + 1];
@@ -72,7 +93,8 @@ export function AnswerForm({
         const id = `answer-${category}`;
         const isLast = index === CATEGORY_IDS.length - 1;
         const filled = values[category].trim() !== '';
-        const wrongLetter = filled && letter !== null && !startsWithLetter(values[category], letter);
+        const wrongLetter =
+          filled && letter !== null && !startsWithLetter(values[category], letter);
         const hintId = `${id}-hint`;
         return (
           <div
@@ -105,7 +127,22 @@ export function AnswerForm({
               name={category}
               value={values[category]}
               onChange={(event) => {
-                onChange(category, event.target.value);
+                if (!readOnly) onChange(category, event.target.value);
+              }}
+              onPaste={(event) => {
+                event.preventDefault();
+              }}
+              onCopy={(event) => {
+                event.preventDefault();
+              }}
+              onCut={(event) => {
+                event.preventDefault();
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+              }}
+              onDragOver={(event) => {
+                event.preventDefault();
               }}
               onKeyDown={handleKeyDown(index)}
               onCompositionStart={() => {
