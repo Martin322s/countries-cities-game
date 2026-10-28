@@ -45,6 +45,14 @@ export default defineConfig([
     },
   },
   {
+    files: ['supabase/functions/**/*.ts'],
+    extends: [tseslint.configs.disableTypeChecked],
+    languageOptions: {
+      parserOptions: { projectService: false },
+      globals: { Deno: 'readonly' },
+    },
+  },
+  {
     files: ['**/*.test.{ts,tsx}', 'src/test/**'],
     rules: {
       '@typescript-eslint/no-non-null-assertion': 'off',

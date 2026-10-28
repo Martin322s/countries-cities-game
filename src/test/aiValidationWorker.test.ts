@@ -1,0 +1,149 @@
+import type { DenoRuntime } from '../../supabase/functions/deno';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { auth, membership, rpc, serve, env, fetchMock } = vi.hoisted(() => ({
+  auth: vi.fn(),
+  membership: vi.fn(),
+  rpc: vi.fn(),
+  env: vi.fn(),
+  fetchMock: vi.fn(),
+  serve: vi.fn<(handler: (request: Request) => Response | Promise<Response>) => void>(),
+}));
+vi.mock('@supabase/supabase-js', () => ({
+  createClient: () => ({
+    auth: { getUser: auth },
+    rpc,
+    from: () => ({
+      select: () => ({ eq: () => ({ eq: () => ({ is: () => ({ maybeSingle: membership }) }) }) }),
+    }),
+  }),
+}));
+
+const roomId = '10000000-0000-0000-0000-000000000001';
+const roundId = '10000000-0000-0000-0000-000000000002';
+const playerId = '10000000-0000-0000-0000-000000000003';
+const claim = '10000000-0000-0000-0000-000000000004';
+let handler: (request: Request) => Response | Promise<Response>;
+const request = (body: unknown = { roomId, roundId }, token = true) =>
+  new Request('https://example.test/validate', {
+    method: 'POST',
+    headers: token ? { Authorization: 'Bearer user-token' } : {},
+    body: JSON.stringify(body),
+  });
+const modelResponse = (index = 0) =>
+  new Response(
+    JSON.stringify({
+      status: 'completed',
+      output: [
+        {
+          content: [
+            {
+              type: 'output_text',
+              text: JSON.stringify({
+                results: [{ index, status: 'VALID', reason: null, suggestion: null }],
+              }),
+            },
+          ],
+        },
+      ],
+    }),
+    { status: 200 },
+  );
+
+beforeAll(async () => {
+  const runtime: DenoRuntime = { env: { get: env }, serve };
+  vi.stubGlobal('Deno', runtime);
+  await import('../../supabase/functions/validate-round-answers/index.ts');
+  handler = serve.mock.calls[0]![0];
+});
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.stubGlobal('fetch', fetchMock);
+  env.mockImplementation(
+    (name: string) =>
+      ({
+        SUPABASE_URL: 'https://example.test',
+        SUPABASE_SERVICE_ROLE_KEY: 'test-service-key',
+        OPENAI_API_KEY: 'test-api-key',
+        OPENAI_MODEL: 'test-model',
+      })[name as 'SUPABASE_URL'],
+  );
+  auth.mockResolvedValue({ data: { user: { id: playerId } }, error: null });
+  membership.mockResolvedValue({ data: { player_id: playerId }, error: null });
+  rpc.mockReset();
+  rpc
+    .mockResolvedValueOnce({
+      data: {
+        claim,
+        letter: 'М',
+        answers: [{ player_id: playerId, category: 'country', value: 'Малта' }],
+      },
+      error: null,
+    })
+    .mockResolvedValue({ data: true, error: null });
+  fetchMock.mockResolvedValue(modelResponse());
+});
+afterAll(() => {
+  vi.unstubAllGlobals();
+});
+
+describe('trusted AI worker', () => {
+  it('rejects unauthenticated and non-member callers before any model request', async () => {
+    expect((await handler(request(undefined, false))).status).toBe(401);
+    membership.mockResolvedValueOnce({ data: null, error: null });
+    expect((await handler(request())).status).toBe(403);
+    expect(rpc).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it('uses database answers and lease identity even if the client supplies forged data', async () => {
+    const response = await handler(
+      request({ roomId, roundId, letter: 'X', answers: [{ value: 'Forged' }] }),
+    );
+    expect(response.status).toBe(200);
+    expect(rpc).toHaveBeenCalledWith('complete_ai_validation', {
+      p_room_id: roomId,
+      p_round_id: roundId,
+      p_claim: claim,
+      p_results: [
+        {
+          player_id: playerId,
+          category: 'country',
+          status: 'VALID',
+          reason: null,
+          suggestion: null,
+          model: 'test-model',
+        },
+      ],
+    });
+    const options = fetchMock.mock.calls[0]![1] as RequestInit;
+    if (typeof options.body !== 'string') throw new Error('Expected a JSON request');
+    expect(options.body).toContain('Малта');
+    expect(options.body).not.toContain('Forged');
+    expect(options.body).toContain('"strict":true');
+    expect(await response.json()).toEqual({ state: 'completed' });
+  });
+  it('does not call the model when another worker already claimed the job', async () => {
+    rpc.mockReset().mockResolvedValue({ data: null, error: null });
+    expect((await handler(request())).status).toBe(202);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it('releases a failed lease and never publishes forged or incomplete model decisions', async () => {
+    fetchMock.mockResolvedValueOnce(modelResponse(999));
+    const response = await handler(request());
+    expect(response.status).toBe(503);
+    expect(rpc).toHaveBeenCalledWith('release_ai_validation', {
+      p_round_id: roundId,
+      p_claim: claim,
+    });
+    expect(rpc.mock.calls.some(([name]) => name === 'complete_ai_validation')).toBe(false);
+    expect(await response.json()).toEqual({ error: 'Validation temporarily unavailable' });
+  });
+  it('fails safely without a server API key', async () => {
+    env.mockImplementation((name: string) =>
+      name === 'OPENAI_API_KEY' ? undefined : 'configured',
+    );
+    expect((await handler(request())).status).toBe(503);
+    expect(rpc).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
