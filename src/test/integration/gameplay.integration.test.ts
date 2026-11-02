@@ -14,7 +14,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 
 import type { Database } from '@/shared/lib/database.types';
 
-import { pollUntil } from './helpers';
+import { finishValidation, pollUntil } from './helpers';
 
 type Client = SupabaseClient<Database>;
 interface Player {
@@ -209,7 +209,7 @@ describe.skipIf(!url || !key)('gameplay against local Supabase', () => {
       p_answers: { country: 'Сенегал' },
     });
     expect(errorCode(afterLock)).toBe('answers_locked');
-    expect((await gameState(stoyan, roomId)).phase).toBe('PLAYING');
+    expect((await gameState(stoyan, roomId)).phase).toBe('RESULTS_READY');
 
     // The last two lock at the same time → exactly one early finish.
     const locks = await Promise.all([
@@ -223,7 +223,7 @@ describe.skipIf(!url || !key)('gameplay against local Supabase', () => {
       .select('locked_at, lock_reason')
       .eq('id', roundId)
       .single();
-    expect(locked.data?.lock_reason).toBe('all_ready');
+    expect(locked.data?.lock_reason).toBe('stop');
     expect((await gameState(stoyan, roomId)).phase).toBe('RESULTS_READY');
 
     // Still private before the reveal.
@@ -238,6 +238,8 @@ describe.skipIf(!url || !key)('gameplay against local Supabase', () => {
       players.map((p) => p.client.rpc('set_results_ready', { p_room_id: roomId })),
     );
     expect(ready.map(errorCode)).toEqual(['ok', 'ok', 'ok']);
+    expect((await gameState(kaloyan, roomId)).phase).toBe('AI_VALIDATING');
+    await finishValidation(roomId, roundId);
     expect((await gameState(kaloyan, roomId)).phase).toBe('REVEAL');
     const revealed = await desi.client.from('answers').select('player_id').eq('round_id', roundId);
     expect(revealed.data).toHaveLength(3);

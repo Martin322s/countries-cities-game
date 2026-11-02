@@ -21,6 +21,7 @@ import {
   closeAllClients,
   errorCode,
   gameState,
+  finishValidation,
   hasLocalSupabase,
   localAdmin,
   pollUntil,
@@ -193,6 +194,7 @@ describe.skipIf(!hasLocalSupabase)('15-player load and full round', () => {
         timed('set_results_ready', () => p.client.rpc('set_results_ready', { p_room_id: roomId })),
       ),
     );
+    await finishValidation(roomId, roundId);
     await shiftRound(roundId, ['reveal_at'], 30_000);
     await pollUntil(
       'RESULTS',

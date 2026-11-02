@@ -5,7 +5,8 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(72);
+select no_plan();
+\ir ../helpers/ai_validation.sql
 
 insert into auth.users (id, aud, role, is_anonymous)
 values
@@ -119,10 +120,12 @@ select public.set_results_ready(current_setting('test.room')::uuid);
 select pg_temp.act_as('00000000-0000-0000-0000-00000000cc03');
 select public.set_results_ready(current_setting('test.room')::uuid);
 set local role postgres;
+select is((select phase::text from public.rooms where id = current_setting('test.room')::uuid), 'AI_VALIDATING', 'ready starts validation');
+select pg_temp.finish_validation(current_setting('test.room')::uuid);
 select is((select phase::text from public.rooms where id = current_setting('test.room')::uuid),
   'REVEAL', 'everyone ready → REVEAL');
-select is((select reveal_at from public.rounds where id = current_setting('test.round')::uuid),
-  now(), 'reveal_at is fixed by the server when the last player is ready');
+select ok((select reveal_at >= now() from public.rounds where id = current_setting('test.round')::uuid),
+  'reveal_at is fixed by the trusted worker');
 select set_config('test.reveal_at', (select reveal_at::text from public.rounds where id = current_setting('test.round')::uuid), true);
 select pg_temp.act_as('00000000-0000-0000-0000-00000000cc03');
 set local role authenticated;

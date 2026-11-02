@@ -8,7 +8,8 @@
 begin;
 create extension if not exists pgtap with schema extensions;
 
-select plan(97);
+select no_plan();
+\ir ../helpers/ai_validation.sql
 
 insert into auth.users (id, aud, role, is_anonymous)
 values
@@ -120,7 +121,7 @@ select ok((select letter = any (public.eligible_letters()) from public.rounds wh
 select is((select started_at - countdown_at from public.rounds where id = current_setting('test.round1')::uuid),
   interval '3 seconds', 'countdown lasts 3 seconds of server time');
 select is((select ends_at - started_at from public.rounds where id = current_setting('test.round1')::uuid),
-  interval '120 seconds', 'the round lasts 120 seconds of server time');
+  interval '60 seconds', 'the round lasts 60 seconds of server time');
 select is((select cardinality(used_letters) from public.rooms where id = current_setting('test.room1')::uuid),
   0, 'used_letters (broadcast over realtime) stays empty during the countdown');
 
@@ -217,9 +218,9 @@ select is((select count(*) from public.answers where player_id <> '00000000-0000
 
 -- 15. Personal ready locks answers.
 select pg_temp.act_as('00000000-0000-0000-0000-0000000000b2');
-select lives_ok(format($$ select public.lock_answers(%L, %L) $$, current_setting('test.room1'), current_setting('test.round1')),
+select lives_ok(format($$ select public.report_visibility(%L, %L, false) $$, current_setting('test.room1'), current_setting('test.round1')),
   'Desi locks her answers');
-select lives_ok(format($$ select public.lock_answers(%L, %L) $$, current_setting('test.room1'), current_setting('test.round1')),
+select lives_ok(format($$ select public.report_visibility(%L, %L, false) $$, current_setting('test.room1'), current_setting('test.round1')),
   'locking again is idempotent');
 select throws_ok(
   format($$ select public.save_answers(%L, %L, '{"plant":"Бор"}'::jsonb) $$,
@@ -228,11 +229,11 @@ select throws_ok(
 select is((select raw_value from public.answers where category = 'country' and player_id = '00000000-0000-0000-0000-0000000000b2'),
   'Беларус', 'locked answers are preserved (refresh restores them)');
 select is((public.get_game_state(current_setting('test.room1')::uuid) #> '{participants}')
-            @> '[{"player_id":"00000000-0000-0000-0000-0000000000b2","answers_lock_reason":"ready"}]'::jsonb,
+            @> '[{"player_id":"00000000-0000-0000-0000-0000000000b2","answers_lock_reason":"tab_exit"}]'::jsonb,
   true, 'the lock is visible in the game state (survives refresh)');
 set local role postgres;
 select is((select phase::text from public.rooms where id = current_setting('test.room1')::uuid),
-  'PLAYING', 'the round continues while others are still writing');
+  'PLAYING', 'one tab lock leaves others answering');
 
 -- 22. Lobby seat expiry never removes a game participant.
 update public.room_players set last_seen_at = now() - interval '10 minutes'
@@ -245,7 +246,7 @@ select is((select left_at from public.room_players
             where room_id = current_setting('test.room1')::uuid and player_id = '00000000-0000-0000-0000-0000000000c3'),
   null, 'a silent participant is not expired during a game');
 select is((select phase::text from public.rooms where id = current_setting('test.room1')::uuid),
-  'PLAYING', 'a disconnected participant still keeps the round open (bounded by the timer)');
+  'PLAYING', 'disconnected participant retains their answering time');
 
 -- 23. Leaving during the round keeps the participant and their answers.
 select pg_temp.act_as('00000000-0000-0000-0000-0000000000c3');
@@ -270,7 +271,7 @@ set local role postgres;
 select is((select phase::text from public.rooms where id = current_setting('test.room1')::uuid),
   'RESULTS_READY', 'all locked ends the round early');
 select is((select lock_reason::text from public.rounds where id = current_setting('test.round1')::uuid),
-  'all_ready', 'the round records why it ended');
+  'stop', 'the round records why it ended');
 
 -- Answers stay private before the reveal.
 select pg_temp.act_as('00000000-0000-0000-0000-0000000000b2');
@@ -294,7 +295,10 @@ select lives_ok(format($$ select public.set_results_ready(%L) $$, current_settin
 select lives_ok(format($$ select public.set_results_ready(%L) $$, current_setting('test.room1')), 'a late retry succeeds silently');
 set local role postgres;
 select is((select phase::text from public.rooms where id = current_setting('test.room1')::uuid),
-  'REVEAL', 'everyone ready moves to REVEAL');
+  'AI_VALIDATING', 'everyone ready starts AI validation');
+select pg_temp.finish_validation(current_setting('test.room1')::uuid);
+select is((select phase::text from public.rooms where id = current_setting('test.room1')::uuid),
+  'REVEAL', 'trusted validation completes before reveal');
 select is((select count(*) from public.ready_checks where round_id = current_setting('test.round1')::uuid and stage = 'pre_results'),
   2::bigint, 'one results-ready row per confirming participant');
 

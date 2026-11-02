@@ -14,12 +14,9 @@ import {
   errorCode,
   gameState,
   hasLocalSupabase,
-  localAdmin,
   pollUntil,
   roomWith,
   shiftRound,
-  supabaseKey,
-  supabaseUrl,
   type Player,
 } from './helpers';
 
@@ -61,194 +58,117 @@ const report = (player: Player, roomId: string, roundId: string, visible: boolea
     p_visible: visible,
   });
 
-describe.skipIf(!hasLocalSupabase)('fair-play visibility', () => {
-  afterAll(async () => {
-    await closeAllClients();
-  });
+describe.skipIf(!hasLocalSupabase)('permanent per-round visibility locks', () => {
+  afterAll(closeAllClients);
 
-  it('records away/return with server time and streams it to members only', async () => {
+  it('streams player locks to members and rejects future edits after return', async () => {
     const { roomId, roundId, players } = await playingRoom();
-    const [stoyan, desi] = players;
+    const [host, player] = players;
     const outsider = await anonymousPlayer();
-
-    const seen: { by: string; event: string }[] = [];
-    const watch = async (player: Player, name: string) => {
-      await player.client.realtime.setAuth();
-      await new Promise<void>((resolve) => {
-        player.client
-          .channel(`room:${roomId}`, {
-            config: { private: true, postgres_changes_options: { wait: true } },
-          })
-          .on(
-            'postgres_changes',
-            {
-              event: '*',
-              schema: 'public',
-              table: 'visibility_events',
-              filter: `room_id=eq.${roomId}`,
-            },
-            (payload) => seen.push({ by: name, event: payload.eventType }),
-          )
-          .subscribe((status) => {
-            if (status === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED) resolve();
-          });
-        // A rejected (non-member) subscription never confirms; don't block on it.
-        setTimeout(resolve, 5_000);
+    const changes: string[] = [];
+    await host.client.realtime.setAuth();
+    const channel = host.client
+      .channel('room:' + roomId, {
+        config: { private: true, postgres_changes_options: { wait: true } },
+      })
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'answer_sheets',
+          filter: 'room_id=eq.' + roomId,
+        },
+        () => changes.push('lock'),
+      );
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error('Realtime subscription timed out'));
+      }, 10_000);
+      channel.subscribe((status) => {
+        if (status === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED) {
+          clearTimeout(timer);
+          resolve();
+        }
       });
-    };
-    await watch(stoyan, 'stoyan');
-    await watch(outsider, 'outsider');
-
-    const away = await report(desi, roomId, roundId, false);
-    expect(errorCode(away)).toBe('ok');
-    const stateBefore = await gameState(stoyan, roomId);
-    const awayAt = Date.parse((away.data as { event: { away_at: string } }).event.away_at);
-    // Server-assigned: within a few seconds of the server's own clock reading.
-    expect(Math.abs(Date.parse(stateBefore.server_now) - awayAt)).toBeLessThan(5_000);
-
-    await pollUntil(
-      'Stoyan receives Desi going away',
-      () => Promise.resolve(seen),
-      (events) => events.some((e) => e.by === 'stoyan' && e.event === 'INSERT'),
-      { timeoutMs: 10_000 },
-    );
-
-    const back = await report(desi, roomId, roundId, true);
-    expect(errorCode(back)).toBe('ok');
-    const event = (back.data as { event: { duration_ms: number } }).event;
-    expect(event.duration_ms).toBeGreaterThanOrEqual(0);
-
-    await pollUntil(
-      'Stoyan receives Desi returning',
-      () => Promise.resolve(seen),
-      (events) => events.some((e) => e.by === 'stoyan' && e.event === 'UPDATE'),
-      { timeoutMs: 10_000 },
-    );
-    expect(seen.filter((e) => e.by === 'outsider')).toEqual([]);
-
-    const events = await activity(stoyan, roomId, roundId);
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ player_id: desi.id, ended_by: 'returned' });
-
-    // Outsiders can neither read nor report.
-    expect(
-      errorCode(
-        await outsider.client.rpc('get_round_activity', {
-          p_room_id: roomId,
-          p_round_id: roundId,
-        }),
-      ),
-    ).toBe('not_member');
-    expect(errorCode(await report(outsider, roomId, roundId, false))).toBe('not_member');
-    const direct = await outsider.client.from('visibility_events').select('id');
-    expect(direct.data).toEqual([]);
-  }, 45_000);
-
-  it('keeps one open interval under concurrent reports from several tabs', async () => {
-    const { roomId, roundId, players } = await playingRoom();
-    const [stoyan, desi] = players;
-
-    const results = await Promise.all(
-      Array.from({ length: 10 }, () => report(desi, roomId, roundId, false)),
-    );
-    expect(results.map(errorCode).every((c) => c === 'ok')).toBe(true);
-    const awayTimes = new Set(
-      results.map((r) => (r.data as { event: { away_at: string } }).event.away_at),
-    );
-    expect(awayTimes.size).toBe(1);
-
-    const returns = await Promise.all(
-      Array.from({ length: 5 }, () => report(desi, roomId, roundId, true)),
-    );
-    expect(returns.map(errorCode).every((c) => c === 'ok')).toBe(true);
-    expect(returns.filter((r) => (r.data as { event: unknown }).event !== null)).toHaveLength(1);
-    expect(await activity(stoyan, roomId, roundId)).toHaveLength(1);
-  });
-
-  it('accepts the keepalive REST call the browser sends while hiding/unloading', async () => {
-    const { roomId, roundId, players } = await playingRoom();
-    const [stoyan, desi] = players;
-    const { data } = await desi.client.auth.getSession();
-    const response = await fetch(`${supabaseUrl}/rest/v1/rpc/report_visibility`, {
-      method: 'POST',
-      keepalive: true,
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: supabaseKey,
-        Authorization: `Bearer ${data.session!.access_token}`,
-      },
-      body: JSON.stringify({
+    });
+    try {
+      const result = await player.client.rpc('report_visibility', {
         p_room_id: roomId,
         p_round_id: roundId,
         p_visible: false,
-        p_unloading: true,
-      }),
-    });
-    expect(response.status).toBe(200);
-    const events = await activity(stoyan, roomId, roundId);
-    expect(events).toMatchObject([{ player_id: desi.id, source: 'unload', returned_at: null }]);
-  });
-
-  it('finalizes an open absence at the deadline and keeps it out of scoring', async () => {
-    const { roomId, roundId, players } = await playingRoom();
-    const [stoyan, desi, kaloyan] = players;
-    for (const [player, country] of [
-      [stoyan, 'Малта'],
-      [desi, 'Малта'],
-      [kaloyan, 'Мароко'],
-    ] as const) {
+        p_answers: { city: 'Snapshot' },
+      });
+      expect(errorCode(result)).toBe('ok');
+      const before = await gameState(host, roomId);
+      expect(before.phase).toBe('PLAYING');
+      await pollUntil(
+        'lock streamed to member',
+        () => Promise.resolve(changes),
+        (events) => events.length > 0,
+      );
+      expect(errorCode(await report(player, roomId, roundId, true))).toBe('ok');
       expect(
         errorCode(
           await player.client.rpc('save_answers', {
             p_room_id: roomId,
             p_round_id: roundId,
-            p_answers: { country },
+            p_answers: { city: 'Changed' },
           }),
         ),
-      ).toBe('ok');
+      ).toBe('answers_locked');
+      const answers = await player.client
+        .from('answers')
+        .select('raw_value')
+        .eq('round_id', roundId);
+      expect(answers.data).toEqual([{ raw_value: 'Snapshot' }]);
+      expect(await activity(host, roomId, roundId)).toMatchObject([
+        { player_id: player.id, ended_by: 'answers_locked' },
+      ]);
+      expect(errorCode(await report(outsider, roomId, roundId, false))).toBe('not_member');
+      expect((await outsider.client.from('visibility_events').select('id')).data).toEqual([]);
+    } finally {
+      await host.client.removeChannel(channel);
     }
-    // Kaloyan goes away and never comes back before the deadline.
-    const away = await report(kaloyan, roomId, roundId, false);
-    expect(errorCode(away)).toBe('ok');
-    const awayAt = Date.parse((away.data as { event: { away_at: string } }).event.away_at);
-    // The deadline passes 500 ms after she left (simulated time); the round locks on the
-    // next request of anyone — nobody has to report anything for her.
-    const admin = await localAdmin();
-    const deadline = await admin
-      .from('rounds')
-      .update({ ends_at: new Date(awayAt + 500).toISOString() })
-      .eq('id', roundId);
-    expect(deadline.error).toBeNull();
-    await pollUntil(
-      'server time passes the simulated deadline',
-      async () => (await gameState(stoyan, roomId)).server_now,
-      (serverNow) => Date.parse(serverNow) > awayAt + 500,
-      { timeoutMs: 5_000 },
-    );
-    await stoyan.client.rpc('heartbeat', { p_room_id: roomId });
-    expect((await gameState(stoyan, roomId)).phase).toBe('RESULTS_READY');
+  }, 30_000);
 
-    const [event] = await activity(stoyan, roomId, roundId);
-    expect(event).toMatchObject({ player_id: kaloyan.id, ended_by: 'round_ended' });
-    expect(Date.parse(event!.returned_at!)).toBe(awayAt + 500);
-    expect(Date.parse(event!.returned_at!)).toBe(Date.parse(event!.cap_at!));
-    // Coming back much later changes nothing, and no new away can start.
-    expect((await report(kaloyan, roomId, roundId, true)).data).toMatchObject({ event: null });
-    expect(errorCode(await report(kaloyan, roomId, roundId, false))).toBe('round_over');
-
-    // Scoring is untouched: Kaloyan's unique answer still scores.
-    await Promise.all(players.map((p) => p.client.rpc('set_results_ready', { p_room_id: roomId })));
-    await shiftRound(roundId, ['reveal_at'], 30_000);
-    await stoyan.client.rpc('heartbeat', { p_room_id: roomId });
-    const { data: results } = await stoyan.client.rpc('get_round_results', {
-      p_room_id: roomId,
-      p_round_id: roundId,
-    });
-    const points = Object.fromEntries(
-      (
-        results as unknown as { players: { player_id: string; round_points: number }[] }
-      ).players.map((p) => [p.player_id, p.round_points]),
+  it('concurrent reports persist one lock and preserve the first snapshot', async () => {
+    const { roomId, roundId, players } = await playingRoom();
+    const [host, player] = players;
+    const results = await Promise.all(
+      Array.from({ length: 10 }, () => report(player, roomId, roundId, false)),
     );
-    expect(points).toEqual({ [stoyan.id]: 0, [desi.id]: 0, [kaloyan.id]: 1 });
+    expect(results.map(errorCode)).toEqual(Array(10).fill('ok'));
+    expect(await activity(host, roomId, roundId)).toHaveLength(1);
+    expect(errorCode(await report(player, roomId, roundId, true))).toBe('ok');
+    expect(
+      errorCode(
+        await player.client.rpc('save_answers', {
+          p_room_id: roomId,
+          p_round_id: roundId,
+          p_answers: { city: 'Late' },
+        }),
+      ),
+    ).toBe('answers_locked');
+  });
+
+  it('STOP racing tab exit never accepts later writes or skips READY', async () => {
+    const { roomId, roundId, players } = await playingRoom();
+    const [host, player] = players;
+    const results = await Promise.all([
+      host.client.rpc('lock_answers', { p_room_id: roomId, p_round_id: roundId }),
+      report(player, roomId, roundId, false),
+    ]);
+    expect(results.map(errorCode)).toEqual(['ok', 'ok']);
+    expect((await gameState(host, roomId)).phase).toBe('RESULTS_READY');
+    expect(
+      errorCode(
+        await player.client.rpc('save_answers', {
+          p_room_id: roomId,
+          p_round_id: roundId,
+          p_answers: { city: 'Late' },
+        }),
+      ),
+    ).toBe('answers_locked');
   });
 });
