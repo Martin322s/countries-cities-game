@@ -272,10 +272,20 @@ describe('ResultsScreen final results', () => {
     ).toBeInTheDocument();
   });
 
-  it('gives non-hosts no invalidation controls', async () => {
+  it('lets non-hosts read explanations without changing answers', async () => {
+    const user = userEvent.setup();
     renderResults(DESI);
     await screen.findByRole('row', { name: /^Стоян/ });
-    expect(within(table()).queryAllByRole('button')).toHaveLength(0);
+    expect(within(table()).getAllByRole('button')).toHaveLength(1);
+    await user.click(within(table()).getByRole('button', { name: /Стоян, Животно: Мечка/ }));
+    const dialog = screen.getByRole('dialog', { name: 'Стоян · Животно' });
+    expect(within(dialog).getByRole('region', { name: 'Причина за анулиране' })).toHaveTextContent(
+      'няма записана конкретна причина',
+    );
+    expect(within(dialog).queryByRole('button', { name: 'ВЪЗСТАНОВИ ОТГОВОРА' })).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: 'ОТБЕЛЕЖИ КАТО НЕВАЛИДЕН' })).toBeNull();
+    await user.click(within(dialog).getAllByRole('button', { name: 'Затвори' })[0]!);
+    expect(resultsApi.setAnswerInvalidated).not.toHaveBeenCalled();
   });
 
   it('lets the host invalidate through a deliberate two-step action', async () => {
@@ -305,6 +315,9 @@ describe('ResultsScreen final results', () => {
     const stoyan = await screen.findByRole('row', { name: /^Стоян/ });
     await user.click(within(stoyan).getByRole('button', { name: /Стоян, Животно: Мечка/ }));
     const dialog = screen.getByRole('dialog', { name: 'Стоян · Животно' });
+    expect(within(dialog).getByRole('region', { name: 'Причина за анулиране' })).toHaveTextContent(
+      'няма записана конкретна причина',
+    );
     await user.click(within(dialog).getByRole('button', { name: 'ВЪЗСТАНОВИ ОТГОВОРА' }));
     expect(resultsApi.setAnswerInvalidated).toHaveBeenCalledWith(
       expect.objectContaining({ playerId: TEST_PLAYER_ID, category: 'animal', invalidated: false }),
@@ -393,7 +406,17 @@ describe('ResultsScreen history', () => {
     await user.click(screen.getByRole('button', { name: 'Предишен рунд' }));
     expect(await screen.findByRole('heading', { name: 'ПРЕДИШЕН РУНД' })).toBeInTheDocument();
     expect(screen.getByText(/само за преглед/)).toBeInTheDocument();
-    expect(within(screen.getByRole('table')).queryAllByRole('button')).toHaveLength(0);
+    expect(within(screen.getByRole('table')).getAllByRole('button')).toHaveLength(1);
+    await user.click(
+      within(screen.getByRole('table')).getByRole('button', { name: /Стоян, Животно: Мечка/ }),
+    );
+    const explanation = screen.getByRole('dialog', { name: 'Стоян · Животно' });
+    expect(
+      within(explanation).getByRole('region', { name: 'Причина за анулиране' }),
+    ).toBeInTheDocument();
+    expect(within(explanation).queryByRole('button', { name: 'ВЪЗСТАНОВИ ОТГОВОРА' })).toBeNull();
+    await user.click(within(explanation).getAllByRole('button', { name: 'Затвори' })[0]!);
+    expect(resultsApi.setAnswerInvalidated).not.toHaveBeenCalled();
     expect(screen.queryByRole('button', { name: 'НОВ РУНД' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Към текущия рунд' }));

@@ -15,6 +15,7 @@ interface ResultsTableProps {
   scoresRevealed: boolean;
   /** True while the synchronized reveal is still running. */
   live: boolean;
+  canEdit?: boolean;
   onSelectCell?: (player: PlayerResult, cell: ResultCell) => void;
 }
 
@@ -29,6 +30,7 @@ export function ResultsTable({
   revealedCategories,
   scoresRevealed,
   live,
+  canEdit = false,
   onSelectCell,
 }: ResultsTableProps) {
   const scroller = useRef<HTMLDivElement>(null);
@@ -146,6 +148,7 @@ export function ResultsTable({
                   return (
                     <td key={cell.category} className="min-w-32 px-[3px] align-top">
                       <ResultCellView
+                        canEdit={canEdit}
                         cell={cell}
                         playerName={player.displayName}
                         revealed={revealed}
@@ -153,6 +156,7 @@ export function ResultsTable({
                         animate={live && revealed && index === revealedCategories - 1}
                         {...(onSelectCell &&
                         revealed &&
+                        (canEdit || cell.state === 'invalid') &&
                         cell.state !== 'empty' &&
                         cell.state !== 'wrong_letter'
                           ? {

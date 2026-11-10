@@ -3,6 +3,8 @@ import {
   isCategoryId,
   isEligibleLetter,
   isGamePhase,
+  VALIDATION_REASONS,
+  type ValidationReason,
   type CategoryId,
   type EligibleLetter,
   type GamePhase,
@@ -27,6 +29,10 @@ export interface ResultCell {
   points: number;
   /** Size of the duplicate group among valid answers (0 for empty/wrong letter/invalid). */
   duplicateCount: number;
+  validationReason?: ValidationReason | null;
+  validationSuggestion?: string | null;
+  hostInvalidated?: boolean;
+  validationTimedOut?: boolean;
 }
 
 export interface PlayerResult {
@@ -97,12 +103,26 @@ function parseCell(value: unknown): ResultCell {
   const state = str(value.state, 'cell.state');
   if (!isCategoryId(category)) return malformed('cell.category');
   if (!(CELL_STATES as readonly string[]).includes(state)) return malformed('cell.state');
+  const reason = value.validation_reason ?? null;
+  if (reason !== null && !VALIDATION_REASONS.some((known) => known === reason))
+    return malformed('cell.validation_reason');
+  const suggestion = value.validation_suggestion ?? null;
+  if (suggestion !== null && typeof suggestion !== 'string')
+    return malformed('cell.validation_suggestion');
+  for (const field of ['host_invalidated', 'validation_timed_out']) {
+    if (value[field] !== undefined && typeof value[field] !== 'boolean')
+      return malformed(`cell.${field}`);
+  }
   return {
     category,
     answer: str(value.answer, 'cell.answer'),
     state: state as CellState,
     points: num(value.points, 'cell.points'),
     duplicateCount: num(value.duplicate_count, 'cell.duplicate_count'),
+    validationReason: reason as ValidationReason | null,
+    validationSuggestion: suggestion,
+    hostInvalidated: value.host_invalidated === true,
+    validationTimedOut: value.validation_timed_out === true,
   };
 }
 

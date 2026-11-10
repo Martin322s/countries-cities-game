@@ -163,6 +163,7 @@ export function ResultsScreen({
             currentId={roundId}
             totalRounds={progress.totalRounds}
             onSelect={(id) => {
+              setSelected(null);
               setViewedRoundId(id === roundId ? null : id);
             }}
           />
@@ -179,6 +180,7 @@ export function ResultsScreen({
             variant="ghost"
             className="h-9 px-3"
             onClick={() => {
+              setSelected(null);
               setViewedRoundId(null);
             }}
           >
@@ -209,14 +211,11 @@ export function ResultsScreen({
             revealedCategories={reveal.revealedCategories}
             scoresRevealed={reveal.scoresRevealed}
             live={live}
-            {...(canEdit
-              ? {
-                  onSelectCell: (player, cell) => {
-                    invalidate.reset();
-                    setSelected({ player, cell });
-                  },
-                }
-              : {})}
+            canEdit={canEdit}
+            onSelectCell={(player, cell) => {
+              invalidate.reset();
+              setSelected({ player, cell });
+            }}
           />
           <Legend />
         </div>
@@ -262,13 +261,14 @@ export function ResultsScreen({
 
       <InvalidationDialog
         selected={selected}
+        canEdit={canEdit}
         pending={invalidate.isPending}
         error={invalidate.error}
         onClose={() => {
           if (!invalidate.isPending) setSelected(null);
         }}
         onConfirm={(invalidated) => {
-          if (!selected) return;
+          if (!selected || !canEdit) return;
           invalidate.mutate(
             { playerId: selected.player.playerId, category: selected.cell.category, invalidated },
             {

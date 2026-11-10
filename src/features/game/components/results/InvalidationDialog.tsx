@@ -6,6 +6,7 @@ import { Notice } from '@/shared/ui/Notice';
 
 import type { PlayerResult, ResultCell } from '../../api/roundResults';
 import { CELL_STATE_LABELS } from './cellStates';
+import { invalidationExplanation } from './invalidationExplanation';
 
 export interface SelectedCell {
   player: PlayerResult;
@@ -14,6 +15,7 @@ export interface SelectedCell {
 
 interface InvalidationDialogProps {
   selected: SelectedCell | null;
+  canEdit: boolean;
   pending: boolean;
   error: RoomError | null;
   onConfirm: (invalidated: boolean) => void;
@@ -21,18 +23,20 @@ interface InvalidationDialogProps {
 }
 
 /**
- * Host-only contextual action for one answer. Opening it is the first, deliberate
+ * Explanation for every player, with contextual actions for the host. Opening it is the first, deliberate
  * step; the action button is the second — so a stray click never changes a score.
  * Native <dialog> provides focus trapping and returns focus to the cell on close.
  */
 export function InvalidationDialog({
   selected,
+  canEdit,
   pending,
   error,
   onConfirm,
   onClose,
 }: InvalidationDialogProps) {
   const invalid = selected?.cell.state === 'invalid';
+  const explanation = selected ? invalidationExplanation(selected.cell) : null;
   return (
     <Dialog
       open={selected !== null}
@@ -56,22 +60,33 @@ export function InvalidationDialog({
               ({CELL_STATE_LABELS[selected.cell.state]})
             </span>
           </p>
+          {explanation ? (
+            <section
+              aria-label="Причина за анулиране"
+              className="rounded-xl border border-white/10 bg-white/5 p-4"
+            >
+              <h3 className="mb-2 font-semibold">Защо е анулиран отговорът?</h3>
+              <p className="text-sm text-fg-muted">{explanation}</p>
+            </section>
+          ) : null}
           {error ? (
             <Notice tone="error">{roomErrorMessage(error.code, 'invalidate')}</Notice>
           ) : null}
           <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
             <Button variant="secondary" onClick={onClose} disabled={pending}>
-              Отказ
+              {canEdit ? 'Отказ' : 'Затвори'}
             </Button>
-            <Button
-              onClick={() => {
-                onConfirm(!invalid);
-              }}
-              disabled={pending}
-              aria-busy={pending}
-            >
-              {invalid ? 'ВЪЗСТАНОВИ ОТГОВОРА' : 'ОТБЕЛЕЖИ КАТО НЕВАЛИДЕН'}
-            </Button>
+            {canEdit ? (
+              <Button
+                onClick={() => {
+                  onConfirm(!invalid);
+                }}
+                disabled={pending}
+                aria-busy={pending}
+              >
+                {invalid ? 'ВЪЗСТАНОВИ ОТГОВОРА' : 'ОТБЕЛЕЖИ КАТО НЕВАЛИДЕН'}
+              </Button>
+            ) : null}
           </div>
         </div>
       ) : null}

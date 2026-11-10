@@ -47,7 +47,8 @@ interface ResultCellViewProps {
   staggerIndex: number;
   /** Animate the transition into the revealed state (only during the live reveal). */
   animate: boolean;
-  /** Present only for the host on a revealed answer that the host can rule on. */
+  canEdit?: boolean;
+  /** Opens the explanation, with editing controls only for the host. */
   onSelect?: () => void;
 }
 
@@ -57,6 +58,7 @@ export function ResultCellView({
   revealed,
   staggerIndex,
   animate,
+  canEdit = false,
   onSelect,
 }: ResultCellViewProps) {
   const category = CATEGORY_LABELS[cell.category];
@@ -139,7 +141,7 @@ export function ResultCellView({
         type="button"
         onClick={onSelect}
         title={duplicateHint}
-        aria-label={`${playerName}, ${category}: ${cell.state === 'empty' ? 'празен' : cell.answer} — ${CELL_STATE_LABELS[cell.state]}. Промени валидността`}
+        aria-label={`${playerName}, ${category}: ${cell.state === 'empty' ? 'празен' : cell.answer} — ${CELL_STATE_LABELS[cell.state]}. ${canEdit ? 'Промени валидността' : 'Виж причината за анулиране'}`}
         className={cn(classes, 'cursor-pointer transition hover:brightness-125')}
         style={style}
       >
