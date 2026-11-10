@@ -2,7 +2,7 @@
 
 A real-time multiplayer web version of the Bulgarian party game **"Държави и градове"**
 ("Countries and Cities") for 2–15 players. Each round a random Bulgarian letter is
-drawn, and every player has two minutes to write a country, city, village, animal,
+drawn, and every player has 60 seconds to write a country, city, village, animal,
 plant, object and name starting with that letter. Unique answers score.
 
 The UI is in Bulgarian. Code, identifiers and technical docs are in English.
@@ -162,8 +162,8 @@ rejection leads to a fresh anonymous session.
 | `finish_game(room_id)`                                                        | Host only, RESULTS of the last round with all 28 letters used → FINISHED (idempotent)           |
 | `set_round_ready(room_id)`                                                    | Pre-round ready for the caller; the last one triggers the letter draw                           |
 | `save_answers(room_id, round_id, answers)`                                    | Upserts the caller's answers while the round is open (server time)                              |
-| `lock_answers(room_id, round_id)`                                             | "ГОТОВ" while playing: final lock of the caller's answers                                       |
-| `set_results_ready(room_id)`                                                  | Second ready stage; the last one moves the room to REVEAL                                       |
+| `lock_answers(room_id, round_id)`                                             | STOP: atomically closes answering for all participants                                          |
+| `set_results_ready(room_id)`                                                  | Independent READY; all required confirmations start AI_VALIDATING                               |
 | `get_game_state(room_id)`                                                     | Read model: phase, round timing, letter (once revealed), statuses, server time                  |
 | `get_round_results(room_id, round_id?)`                                       | Server-scored results of a revealed round + standings as of that round                          |
 | `get_game_summary(room_id)`                                                   | Final standings (points, rounds played), room code, rounds completed                            |
@@ -243,8 +243,8 @@ to report `SUBSCRIBED` only once the change stream is live.
 ### Flow
 
 ```
-LOBBY ──start_game (host)──▶ ROUND_WAITING ──all ready──▶ COUNTDOWN (3 s) ──started_at──▶ PLAYING (120 s)
-PLAYING ──all locked | ends_at──▶ (ROUND_LOCKED) ▶ RESULTS_READY ──all ready──▶ REVEAL ──11 s──▶ RESULTS
+LOBBY ──start_game (host)──▶ ROUND_WAITING ──all ready──▶ COUNTDOWN (3 s) ──started_at──▶ PLAYING (60 s)
+PLAYING ──STOP | ends_at──▶ (ROUND_LOCKED) ▶ RESULTS_READY ──all ready──▶ REVEAL ──11 s──▶ RESULTS
 ```
 
 `ROUND_LOCKED` is passed through inside the locking transaction. The persisted phase after a
@@ -269,7 +269,7 @@ The participant set of a round is fixed when the round is created.
 | Check                          | Required participants                                                              |
 | ------------------------------ | ---------------------------------------------------------------------------------- |
 | Pre-round ready, results-ready | Not left **and** heartbeat within 45 s (the same staleness rule as host migration) |
-| Early round finish             | Not left. Disconnected players keep their full time; the timer bounds the wait.    |
+| Early round finish             | First accepted STOP from an active participant                                     |
 
 So a 1-second Wi-Fi drop never starts a round without someone, and a player who has gone
 for good never blocks a ready check forever. Lobby seat expiry (2 min) applies to `LOBBY`
@@ -277,10 +277,10 @@ only. Participants of a running game are never removed for being silent.
 
 ### Ready stages
 
-There are three separate per-round stages:
+There are two independent ready checks and an answering phase:
 
 - `ready_checks` with `stage = 'pre_round'`;
-- the personal answer lock (`answer_sheets.submitted_at`);
+- STOP ends answering for everyone; tab exit locks the individual sheet;
 - `ready_checks` with `stage = 'pre_results'`.
 
 Rows are keyed by round, so nothing leaks between stages or rounds. Every ready RPC is
@@ -309,7 +309,7 @@ The letter stays secret until `started_at`:
 ### Authoritative timing
 
 The server writes all three timestamps in the same transaction as the draw:
-`countdown_at = now()`, `started_at = countdown_at + 3 s`, `ends_at = started_at + 120 s`.
+`countdown_at = now()`, `started_at = countdown_at + 3 s`, `ends_at = started_at + 60 s`.
 
 - **Answer writes** are checked against those timestamps directly
   (`started_at ≤ now() < ends_at`). Correctness never depends on the persisted phase.
@@ -341,7 +341,7 @@ the timer.
   - Inputs update locally at once.
   - Changed categories are sent in one `save_answers` call after 500 ms of quiet.
   - Writes are chained, so they arrive in order. Failures are re-queued and retried every 2 s.
-  - Pending edits are flushed before READY, 1.5 s before the deadline, and on unmount.
+  - Pending edits are flushed before STOP, 1.5 s before the deadline, and on unmount.
   - `beforeunload` isn't relied on. A refresh restores the latest persisted answers.
 - **Stored form:** NFC, surrounding whitespace trimmed, casing kept, max 100 characters. The
   server also stores the duplicate key (`normalize_answer`, which mirrors `normalizeAnswer`).
@@ -350,12 +350,11 @@ the timer.
     `REVEAL`, `RESULTS`, `FINISHED`, or a later round. This includes the host.
   - The `answers` table isn't in the Realtime publication. Only status rows
     (`answer_sheets`, `ready_checks`) are broadcast.
-- **Personal lock (READY):** flush, then `lock_answers`, which sets
-  `answer_sheets.submitted_at`. It's final for the round: later saves fail with
-  `answers_locked`, and a refresh keeps the lock.
-- **Early finish:** when every participant still in the game has locked, the same
-  transaction locks the round (`lock_reason = 'all_ready'`). Row locks guarantee exactly one
-  transition, even when the last players press READY at the same moment.
+- **STOP:** flush, then `lock_answers`. The first accepted request sets the round lock
+  (`lock_reason = 'stop'`) and enters `RESULTS_READY`; later STOP calls do nothing.
+  All saves take the same room row lock, so a write cannot slip through after STOP.
+- **Tab exit:** the browser closes its draft immediately; `report_visibility` atomically
+  persists its last snapshot and locks the sheet as `tab_exit`. Returning never unlocks it.
 - **Timeout:**
   - At `ends_at` the client locks the inputs immediately.
   - The server rejects any later write (`round_over`).
@@ -556,119 +555,11 @@ The next-round and finish controls belong to whoever is host right now. If the h
 in `RESULTS`, the role moves after 45 s (as everywhere) and the new host gets the buttons; the old
 host's requests are rejected with `not_host`.
 
-## Fair-play visibility monitoring
+## Fair-play round controls
 
-During a round the group can see when a player's **game page was hidden** — "Деси напусна
-играта", "Деси се върна след 6 сек." — and decide for themselves whether it matters. It is a
-lightweight signal for a private party game, **not** anti-cheat or proctoring.
-
-### What it detects — and what it does not
-
-- **Detects:** the Page Visibility API reporting the game page as `hidden`: another tab in
-  front, another app, a minimized window, a locked phone, the OS backgrounding the browser.
-- **Does not detect or collect:** which site or app was opened, URLs, page or window titles,
-  browsing history, clipboard, keystrokes outside the game, screen contents, device
-  fingerprints. The only data stored is _who_, _which round_, _when hidden_, _when back_ and
-  whether the page was unloading. Nothing else exists to leak.
-- **Cannot tell intent:** looking something up, answering a message, a notification shade, a
-  phone call or a locked screen all look the same. The UI therefore uses neutral wording only
-  ("напусна играта", "извън играта", "върна се") and never suggests cheating.
-- **A side-by-side window** (game still visible, focus elsewhere) is _not_ reported: `blur`
-  also fires for the address bar, devtools, autofill and permission prompts, so it would
-  produce false alarms. `focus`, `pageshow` and `resume` are used only to re-check
-  `document.visibilityState` (some mobile browsers miss a `visibilitychange` on return).
-
-### No penalties
-
-Nothing happens automatically: no points removed, no answers invalidated or locked, no kick,
-no disqualification, no effect on the leaderboard or the round timer. Hosts can still
-invalidate answers manually, exactly as before.
-
-### When it is active
-
-Only while the player can still edit answers: effective `PLAYING` (after `started_at`,
-before `ends_at`), a participant of the round, not left, answers not locked. After pressing
-"ГОТОВ" monitoring stops for that round — the answers are final, so switching away no longer
-matters. Nothing is recorded in the lobby, ready checks, countdown, results or after the game.
-
-### Server-authoritative intervals
-
-- The client only reports "my page is hidden" / "visible again"
-  (`report_visibility(room, round, visible, unloading)`). The server derives the player from
-  `auth.uid()`, requires the round to be the room's current one, and stamps **its own**
-  `now()` — clients never send timestamps, durations or player ids.
-- "Away" is accepted only during the caller's own answering window; repeated reports are
-  idempotent and a partial unique index allows **one open interval per player and round**.
-- "Return" closes the open interval at `now()`, **clamped** to the end of the player's
-  answering window (`ends_at`, the round lock, or their own answer lock). A return with
-  nothing open is a harmless no-op.
-- If the player is still away when the window ends, triggers close the interval at the round
-  lock (`round_ended`) or at their own sheet lock (`answers_locked`, e.g. leaving the room).
-  `get_round_activity` derives the same end for a round whose lock has not been persisted
-  yet, so a player who comes back 20 minutes later is shown away for at most the remaining
-  playing time.
-- Closed intervals are immutable (trigger, even for privileged writes); clients have no table
-  write privileges at all.
-
-### Mobile and background behaviour
-
-Phones may suspend JavaScript right after a page is hidden. The "away" request is therefore
-sent **immediately** from the `visibilitychange` / `pagehide` handler with
-`fetch(..., { keepalive: true })`, using an access token read ahead of time — no timer has to
-run while hidden. On return, the server's clock decides the duration. If the device is offline
-at the moment it is hidden, that absence is simply not recorded (best-effort by design).
-
-### Refresh
-
-A reload fires `pagehide` (page still visible) and then `visibilitychange` → hidden. The
-client marks such an away as **unload**, and the reloaded game reports "visible" as soon as it
-is back, which closes the interval (typically 0.1–1 s). Unload intervals use a longer display
-grace (`UNLOAD_GRACE_MS` = 5 s), so a refresh never shows up as leaving the game; closing the
-tab and staying away longer does.
-
-### Multiple tabs
-
-Visibility is per **player**, not per tab. Tabs of the same round talk over a
-`BroadcastChannel` (same browser profile only): a tab announces when it becomes visible or
-hidden, visible tabs re-announce every 2 s, and a tab silent for 5 s (crashed, or closed
-without a goodbye) no longer counts. The player is away only when **no** tab of the game is
-visible; the tab that observes that transition reports it, and the tab that becomes visible
-reports the return. The server's idempotency absorbs any remaining duplicate. Limitations:
-tabs in different browser profiles or browsers cannot coordinate (they are different anonymous
-players anyway), and a hidden tab may be throttled, which only delays noticing a crashed
-sibling.
-
-### Network loss is not absence
-
-Visibility and connectivity are separate. A page that stays visible while the network drops
-creates no event (the connection banner handles that); a hidden page with network still
-reports its absence.
-
-### Thresholds and display
-
-- `MEANINGFUL_AWAY_MS` = **2 s** (`src/domain/activity.ts`): shorter absences are stored but
-  never shown (accidental switches, OS UI).
-- **Live:** the player's row shows "извън играта · 8 сек." once the threshold is passed. The
-  seconds are `serverNow − away_at` from the shared server-clock estimate and tick only in that
-  small badge — nothing is written per second and the answer form never re-renders for it.
-- **Notifications** appear in the sticky round header in place of the round info, so they
-  never cover an answer field. One at a time (4 s each, queued), in a polite live region,
-  without moving focus: "Деси напусна играта", "Деси се върна след 6 сек."; the returning
-  player only sees a neutral "Отсъства 6 сек.". History present when a screen loads is not
-  replayed.
-- **"АКТИВНОСТ"** (collapsed by default, under the players): per player, the number of
-  meaningful absences and their total ("Деси — 2 излизания · общо 11 сек."), or "извън играта
-  сега · 8 сек.". No scores, no ranking, no "suspicious" colouring.
-- **"АКТИВНОСТ ПРЕЗ РУНДА"** under the results (after the reveal, never part of it) and in
-  history: every participant, "2 излизания · 11 сек. общо" or "няма отчетени излизания".
-- Realtime: `visibility_events` is published (who/when only); clients refetch
-  `get_round_activity` on change — no polling.
-
-### Honest limits
-
-A player can modify their own browser or client code and simply stop reporting. In a normal
-browser this cannot be made tamper-proof without invasive surveillance, which this app
-deliberately does not attempt. Treat the signal as a conversation starter between friends.
+STOP, READY, clipboard restrictions, tab locks, retries and deployment notes are documented
+in [Round controls](docs/round-controls.md). Tab/window exit permanently locks answers for
+the current round; stored answers still participate in normal scoring.
 
 ## Game feel: sound, motion and UX
 

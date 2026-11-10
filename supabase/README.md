@@ -12,6 +12,7 @@ and the RPC functions the client calls.
 | `20261006000000_visibility_monitoring` | Fair-play away intervals: `report_visibility`, `get_round_activity`, one-open-interval index, finalization triggers, immutability, realtime                                                                                                                      |
 | `20261007000000_production_hardening`  | Rate limiting (PostgREST pre-request hook, `private` schema), 16 KB request limit, size guards before normalization, room-code guessing limit (`join_room` → NULL for unknown codes), retention cleanup + `pg_cron`, cascade indexes, faster `standings_through` |
 | `20261005000000_multi_round_game`      | Next round, snapshot/sequence guards, standings "as of" a round, progress + history in game state, finish, summary                                                                                                                                               |
+| `20261013000000_ai_validation`         | AI validation phase, answer validation columns/tables, and strict structured validation results for all round answers                                                                                                                                            |
 
 ## Local development
 
@@ -92,7 +93,7 @@ the round. `ready_checks` rows must reference a participant (FK) and are keyed b
 
 **Timing.** Both are set when the letter is drawn:
 `started_at = countdown_at + countdown_duration()` (3 s), and
-`ends_at = started_at + round_duration()` (120 s). The partial unique index
+`ends_at = started_at + round_duration()` (60 s). The partial unique index
 `rounds_one_open_round_per_room` allows a single open round per room.
 
 **advance_game** runs from every room RPC, including each heartbeat:
@@ -101,7 +102,7 @@ the round. `ready_checks` rows must reference a participant (FK) and are keyed b
    used in this room yet (a round only exists while one remains — see `start_next_round`).
 2. `COUNTDOWN` → `PLAYING` once `now() ≥ started_at`. `used_letters` is extended here.
 3. `PLAYING` → `RESULTS_READY` when `now() ≥ ends_at` (`timeout`, `locked_at = ends_at`) or
-   `all_answers_locked` (`all_ready`).
+   STOP through `lock_answers` (`stop`).
 4. `RESULTS_READY` → `REVEAL` when `all_required_ready(pre_results)`. This sets
    `rounds.reveal_at = now()` exactly once.
 5. `REVEAL` → `RESULTS` once `now() ≥ reveal_at + reveal_duration()` (11 s).
@@ -214,9 +215,9 @@ so future functions and tables start private.
   - start rules: host only, ≥ 2 players, once, then no new players;
   - ready stages: idempotent and isolated per stage;
   - the letter draw: eligible, hidden until start, never repeated (27 letters pre-used);
-  - the 3 s / 120 s timeline;
+  - the 3 s / 60 s timeline;
   - save validation and answer privacy, host included;
-  - personal lock, early finish, timeout lock at `ends_at`;
+  - tab-exit lock, STOP, timeout lock at `ends_at`;
   - stale-player rules, no lobby expiry mid-game;
   - leaving and rejoining mid-game, host migration without touching the round.
 - `supabase/tests/database/results.test.sql`: 69 pgTAP assertions for results. They cover:
